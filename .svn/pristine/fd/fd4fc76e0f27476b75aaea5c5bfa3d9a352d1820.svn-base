@@ -1,0 +1,238 @@
+# littlecloud webservice configuration
+com.littlecloud.ac.ACService.USER_REQ_AC_TO_WTP_FIFO=/var/run/ac/FIFO_AC_TO_WTP
+com.littlecloud.ac.ACService.USER_REQ_WTP_TO_AC_FIFO=/var/run/ac/FIFO_WTP_TO_AC
+com.littlecloud.ac.ACService.REPLAY_REQ_WTP_TO_AC_FIFO=/var/run/ac/FIFO_WTP_TO_AC_REPLAY
+com.littlecloud.ac.ACService.USER_REQ_AC_TO_WTP_FIFO.THREAD_POOL_SIZE=10
+com.littlecloud.ac.ACService.ROOT_CERT_PATH=/etc/littlecloud/ac/root.crt
+com.littlecloud.ac.ACService.CLIENT_CERT_PATH=/opt/nginx/conf/ssl/lc.peplink.com.key.pem
+com.littlecloud.ac.ACService.CLIENT_KEY=/opt/nginx/conf/ssl/lc.peplink.com.key
+com.littlecloud.ac.ACService.CLIENT_KEY_PWD=client_key_password
+com.littlecloud.ac.ACService.CN=lc.peplink.com
+
+com.littlecloud.ac.ACService.OPMODE=true
+# normal mode
+com.littlecloud.ac.ACService.OPMODE_NORMAL.rpt_enable=1
+com.littlecloud.ac.ACService.OPMODE_NORMAL.rpt_offset=0
+com.littlecloud.ac.ACService.OPMODE_NORMAL.rpt_period=60
+com.littlecloud.ac.ACService.OPMODE_NORMAL.evt_period=10
+com.littlecloud.ac.ACService.OPMODE_NORMAL.gps_sample_intv=2
+com.littlecloud.ac.ACService.OPMODE_NORMAL.gps_live_intv=3
+com.littlecloud.ac.ACService.OPMODE_NORMAL.gps_live_pts=1
+com.littlecloud.ac.ACService.OPMODE_NORMAL.heartbeat=25
+com.littlecloud.ac.ACService.OPMODE_NORMAL.peer_dead=120
+
+# low bandwidth mode
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.rpt_enable=1
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.rpt_offset=0
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.rpt_period=3600
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.evt_period=60
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.gps_sample_intv=14
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.gps_live_intv=60
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.gps_live_pts=1
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.heartbeat=25
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.peer_dead=120
+
+# root or offline mode
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.rpt_enable=0
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.rpt_offset=0
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.rpt_period=3600
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.evt_period=60
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.gps_sample_intv=14
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.gps_live_intv=60
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.gps_live_pts=1
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.heartbeat=25
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.peer_dead=120
+
+# Bypass Expiry Check
+com.littlecloud.ac.WtpMsgHandler.mode=peplink
+com.littlecloud.ac.WtpMsgHandler.BYPASS_WARRANTY_CHECK=0
+com.littlecloud.ac.WtpMsgHandler.EVENT_EXPIRED_TIME_IN_SEC=3600
+# Message will be bypassed if MAX_CONCURRENT_MESSAGE exceeds to avoid conection pool limit exceeded
+com.littlecloud.ac.WtpMsgHandler.MAX_CONCURRENT_MESSAGE=500
+com.littlecloud.ac.WtpMsgHandler.MAX_CURRENT_ONLINEEVENT_COUNTER=100
+
+# WtpMsgPool
+com.littlecloud.ac.WtpMsgHandlerPool.POOL_GENERAL_MESSAGE_PER_SECOND=500
+com.littlecloud.ac.WtpMsgHandlerPool.POOL_MAX_MESSAGE_PER_SECOND=1000
+com.littlecloud.ac.WtpMsgHandlerPool.POOL_MESSAGE_WAIT_TIMEOUT=60
+com.littlecloud.ac.WtpMsgHandlerPool.POOL_MESSAGE_QUEUE=100
+
+cluster.auto.restart.minimum.second=120
+com.littlecloud.pool.Cluster.auto.restart.minimum.second=120
+
+#configuration for archive report raw data
+com.littlecloud.ac.ReportConsolidateService.ArchivePath=/mnt/archive/
+#in days
+com.littlecloud.ac.ReportConsolidateService.UsageReportKeepTime=1
+com.littlecloud.ac.ReportConsolidateService.GpsDataKeepTime=30
+
+
+#configuration for firmware upgrade
+com.littlecloud.ac.FirmwareUpdateService.RootDomain=lb-rs-i.dev.pepwave.com
+com.littlecloud.ac.FirmwareUpdateService.getReleaseDetailUrl=/private/root/api/show_firmware_release
+com.littlecloud.ac.FirmwareUpdateService.emailDaysBeforeUpdate=14
+
+
+com.littlecloud.ac.ACService.SERVER_NAME=ac1-2
+com.littlecloud.ac.ACService.DOMAIN_NAME=dev.pepwave.com
+
+#configuration for FusionHub
+com.littlecloud.fusionhub.FusionHubProperties.FusionHubVerifyLicURL=http://lb-rs-i.dev.pepwave.com/r/fusionhub/api/verify_fusion_hub_license
+com.littlecloud.fusionhub.FusionHubProperties.FusionHubDefaultSn=1824-C792-89C0-
+com.littlecloud.fusionhub.FusionHubProperties.FusionHubDefaultModel=FHBVM
+
+com.littlecloud.ac.ReportConsolidateService.HourlyUsageKeepTime=2
+com.littlecloud.ac.ReportConsolidateService.DailyUsageKeepTime=61
+com.littlecloud.ac.ReportConsolidateService.monthly_records_count=300
+#config application
+com.littlecloud.control.json.model.config.util.ConfigUtils.GROUP_MASTER_CFG_PATH=/mnt/run/config/master
+com.littlecloud.control.json.model.config.util.ConfigUtils.MAX_RETRY_CFG_APPLY=1000
+com.littlecloud.control.json.model.config.util.ConfigUtils.FIRMWARE_BLACKLIST=6.1.0s56 build 2883
+com.littlecloud.control.json.model.config.util.ConfigUtils.PORTAL_URL=https://lc1.dev.pepwave.com/cp/
+com.littlecloud.control.json.model.config.util.RadioConfigUtils.GROUP_MASTER_CFG_PATH=/mnt/run/config/master
+com.littlecloud.control.json.model.config.util.RadioConfigUtils.MAX_RETRY_CFG_APPLY=1000
+com.littlecloud.control.json.model.config.util.RadioConfigUtils.FIRMWARE_BLACKLIST=6.1.0s56 build 2883
+com.littlecloud.control.json.model.config.util.RadioConfigUtils.PORTAL_URL=https://lc1.dev.pepwave.com/cp/
+
+#wtpmsg/queue control
+com.littlecloud.pool.control.QueueControl.MAX_QUEUE_SIZE=100000
+com.littlecloud.pool.control.QueueControl.MAX_BATCH_SIZE=500
+com.littlecloud.pool.control.QueueControl.MAX_TASK_TIME=10
+com.littlecloud.pool.control.QueueControl.HIGH_PRIORITY_QUEUE_SIZE=1500
+com.littlecloud.ac.util.ACScheduler.QUEUE_CONTROL_THREADPOOL_SIZE=50
+com.littlecloud.ac.util.ACScheduler.QUEUE_CONTROL_SCHEDULE_INTERVAL_SECOND=15
+com.littlecloud.ac.util.ACScheduler.QUEUECACHE_CONTROL_THREADPOOL_SIZE=20
+com.littlecloud.ac.util.ACScheduler.QUEUECACHE_CONTROL_SCHEDULE_INTERVAL_SECOND=15
+
+# skip duplicate DEV_USAGE report
+com.littlecloud.ac.WtpMsgHandler.DEV_USAGE_REPORT_INTERVAL_SECOND=1800
+
+# peplink cert location
+com.littlecloud.ac.messagehandler.RedirectWtpMessageHandler.CERT_CA=/etc/littlecloud/ac/root.crt
+com.littlecloud.ac.messagehandler.RedirectWtpMessageHandler.CERT_PRIVATE=/etc/littlecloud/ac/peplink.com.key.pem
+com.littlecloud.ac.messagehandler.RedirectWtpMessageHandler.CERT_PUBLIC=/etc/littlecloud/ac/peplink.com.crt
+com.littlecloud.ac.messagehandler.RedirectWtpMessageHandler.CERT_PEER_CN=lc.peplink.com
+
+# root server redirection
+com.littlecloud.ac.handler.RootServerRedirectionHandler.root.server.enabled=true
+com.littlecloud.ac.handler.RootServerRedirectionHandler.root.servers=54.200.27.33
+com.littlecloud.ac.handler.RootServerRedirectionHandler.root.CERT_CA=/etc/littlecloud/ac/root.crt
+com.littlecloud.ac.handler.RootServerRedirectionHandler.root.CERT_PRIVATE=/etc/littlecloud/ac/peplink.com.key.pem
+com.littlecloud.ac.handler.RootServerRedirectionHandler.root.CERT_PUBLIC=/etc/littlecloud/ac/peplink.com.crt
+com.littlecloud.ac.handler.RootServerRedirectionHandler.root.CERT_PEER_CN=lc.peplink.com
+
+# branch server redirection
+com.littlecloud.ac.handler.BranchServerRedirectionHandler.branch.server.enabled=false
+com.littlecloud.ac.handler.BranchServerRedirectionHandler.branch.CERT_CA=/etc/littlecloud/ac/root.crt
+com.littlecloud.ac.handler.BranchServerRedirectionHandler.branch.CERT_PRIVATE=/etc/littlecloud/ac/peplink.com.key.pem
+com.littlecloud.ac.handler.BranchServerRedirectionHandler.branch.CERT_PUBLIC=/etc/littlecloud/ac/peplink.com.crt
+com.littlecloud.ac.handler.BranchServerRedirectionHandler.branch.CERT_PEER_CN=lc.peplink.com
+
+#ddns name mapping
+com.littlecloud.ac.messagehandler.DdnsMessageHandler.DDNS_REG_EXP_NOT_DNS_ACCEPTED_CHARS=[~\!@\#$%^&*()_+\=`{}\\[\\]\\|\\\\\:;'<>,.\\/? ]
+com.littlecloud.ac.messagehandler.DdnsMessageHandler.DDNS_REG_EXP_FIRST_LAST_CHAR_HYPEN=(^-+|-+$)
+com.littlecloud.ac.messagehandler.DdnsMessageHandler.DDNS_REG_EXP_CONTINUE_REPT_HYPEN=-+
+com.littlecloud.ac.messagehandler.DdnsMessageHandler.DDNSREG_EXP_NON_ENG_WORDS=[^\\u0000-\\u007F]+
+com.littlecloud.ac.messagehandler.DdnsMessageHandler.DDNS_SUFFIX_NAME=ddns.pepwave.com
+
+#fetch command duration and interval
+com.littlecloud.ac.ACService.PIPE_INFO_TYPE_SSID_DISCOVERY_CMD_DURATION=5
+com.littlecloud.ac.ACService.PIPE_INFO_TYPE_SSID_DISCOVERY_CMD_INTERVAL=5
+
+# Device feature or license update service
+com.littlecloud.control.devicechange.DeviceChangeService.SERVICE_ENABLE=true
+
+# health check
+com.littlecloud.pool.Cluster.XPATH_INITIAL_HOSTS=/config/TCPPING/@initial_hosts
+com.littlecloud.pool.control.PoolControl.online_event_max_retry=7
+com.littlecloud.pool.control.PoolControl.CRITICAL_CACHE_EXPIRE_SECOND=3600
+com.littlecloud.ac.health.HealthMonitorHandler.monitor_sys_interval_min=1
+com.littlecloud.ac.health.HealthMonitorHandler.recipients=kennethkwan@peplink.com|tedc@peplink.com|alanhltsui@peplink.com
+com.littlecloud.ac.health.ReportHealthMonitor.CONSOLIDATE_JOB_URL=http://bs1-2:28080/LittleCloud/monitor/db
+# - Db
+com.littlecloud.ac.health.DBHealthMonitor.monitor_db_interval_min=1
+com.littlecloud.ac.health.DBHealthMonitor.health_db_select_max_retry=5
+com.littlecloud.ac.health.DBHealthMonitor.health_db_inpool_min_size=5
+com.littlecloud.ac.health.DBHealthMonitor.health_db_info_update_time=3
+# - Db
+com.littlecloud.ac.root.health.DBHealthMonitorRoot.monitor_db_interval_min=1
+com.littlecloud.ac.root.health.DBHealthMonitorRoot.health_db_select_max_retry=5
+com.littlecloud.ac.root.health.DBHealthMonitorRoot.health_db_inpool_min_size=5
+com.littlecloud.ac.root.health.DBHealthMonitorRoot.health_db_info_update_time=3
+# - Core
+com.littlecloud.ac.health.CoreHealthMonitor.monitor_core_interval_min=1
+com.littlecloud.ac.health.CoreHealthMonitor.health_core_wtpmsg_thread_count=200
+com.littlecloud.ac.health.CoreHealthMonitor.health_core_db_queue_size=1000
+com.littlecloud.ac.health.CoreHealthMonitor.health_core_cache_queue_size=2000
+com.littlecloud.ac.health.CoreHealthMonitor.health_core_info_update_time=3
+com.littlecloud.ac.health.CoreHealthMonitor.health_db_queue_size=3000
+# - AC
+com.littlecloud.ac.health.ACHealthMonitor.monitor_ac_interval_min=1
+com.littlecloud.ac.health.ACHealthMonitor.health_ac_queue_size=1000
+com.littlecloud.ac.health.ACHealthMonitor.health_ac_uptime_min=5
+com.littlecloud.ac.health.ACHealthMonitor.health_ac_info_update_time=3
+# - JVM
+com.littlecloud.ac.health.JVMHealthMonitor.monitor_jvm_interval_min=1
+com.littlecloud.ac.health.JVMHealthMonitor.health_jvm_info_update_time=3
+# - Disk
+com.littlecloud.ac.health.DiskHealthMonitor.monitor_disk_interval_min=1
+com.littlecloud.ac.health.DiskHealthMonitor.health_disk_info_update_time=3
+# - overall
+com.littlecloud.ac.health.CoreHealthMonitor.health_core_startup_time_in_sec=300
+com.littlecloud.ac.health.HealthMonitorHandler.health_recovery_time_in_sec=300
+com.littlecloud.ac.WtpMsgHandler.UNHEALTHY_SKIP_MESSAGE=true
+
+
+# enable or disable the whole captive portal function including WtpMsgHandler Message and queue MessageHandleExecutorController
+com.littlecloud.ac.ACService.CAPTIVE_PORTAL_ENABLED=false
+
+# - captive portal MessageThreadExecutor, for messagehandler
+com.littlecloud.ac.messagehandler.CaptivePortalMessageHandler.IDLE_MINUTE_TO_DETERMINE_DISCONNECTED=5
+com.littlecloud.ac.messagehandler.queue.executor.CaptivePortalMessageThreadExecutor.MAX_THREAD_POOL=1
+com.littlecloud.ac.messagehandler.queue.executor.CaptivePortalMessageThreadExecutor.THREAD_SLEEP=1000
+com.littlecloud.ac.messagehandler.queue.MessageQueueFactory.BLOCK_QUEUE_SIZE=512
+
+# - AcInfoDeviceMessageExecutor
+com.littlecloud.ac.messagehandler.executor.impl.AcInfoDeviceMessageExecutorImpl.MAX_THREAD_POOL=1
+com.littlecloud.ac.messagehandler.executor.impl.AcInfoDeviceMessageExecutorImpl.THREAD_SLEEP=1
+
+#aptive portal health check url
+com.littlecloud.services.CaptivePortalHealthMgr.PORTAL_HEALTH_CHECK_URL=http://lb-ac1-i.dev.pepwave.com:8443/healthCheck
+
+
+#The configuration for alert service
+# -------> the following fours line will be replaced by
+com.littlecloud.control.alertservices.util.AlertUtils.getEmailUrl=http://lb-rs-i.dev.pepwave.com/r/private/root/api/show_admin_contacts
+com.littlecloud.control.alertservices.util.AlertUtils.getTemplateUrl=http://lb-rs-i.dev.pepwave.com/r/private/root/api/compile_html
+com.littlecloud.control.alertservices.util.AlertUtils.alert.server.addr=127.0.0.1
+com.littlecloud.control.alertservices.util.AlertUtils.alert.server.port=28300
+# =======>
+com.littlecloud.pool.SchedulerAction.OFFLINE_ALERT_SLEEP=1000
+com.littlecloud.services.RailsMailMgr.getEmailUrl=http://lb-rs-i.dev.pepwave.com/r/private/root/api/show_admin_contacts
+com.littlecloud.services.RailsMailMgr.getTemplateUrl=http://lb-rs-i.dev.pepwave.com/r/private/root/api/compile_html
+com.littlecloud.services.AlertClientMgr.alert.server.addr=127.0.0.1
+com.littlecloud.services.AlertClientMgr.alert.server.port=28300
+
+alert.server.addr=127.0.0.1
+alert.server.port=28300
+#configuration for idle offline checking
+#-----> will be obsoleted, replaced by OfflineAlertCheckingMgr
+com.littlecloud.ac.OfflineAlertCheckingService.idleThresholdNormal=8
+com.littlecloud.ac.OfflineAlertCheckingService.idleThresholdNormalLowBandwidth=64
+#=====>
+com.littlecloud.services.OfflineAlertCheckingMgr.idleThresholdNormal=8
+com.littlecloud.services.OfflineAlertCheckingMgr.idleThresholdNormalLowBandwidth=64
+
+#FIFO replay setting
+com.littlecloud.factories.MongoClientConnectionFactory.FIFO_MONGO_SERVER=10.0.0.100
+com.littlecloud.factories.MongoClientConnectionFactory.FIFO_MONGO_SERVER_PORT=27017
+com.littlecloud.factories.MongoClientConnectionFactory.FIFO_MONGO_DB=fifo
+
+#root server config
+com.littlecloud.ac.WtpMsgHandlerRoot.mode=peplink
+com.littlecloud.ac.WtpMsgHandlerRoot.BYPASS_WARRANTY_CHECK=0
+com.littlecloud.ac.WtpMsgHandlerRoot.EVENT_EXPIRED_TIME_IN_SEC=3600
+com.littlecloud.ac.WtpMsgHandlerRoot.MAX_CONCURRENT_MESSAGE=500
+com.littlecloud.ac.WtpMsgHandlerRoot.MAX_CURRENT_ONLINEEVENT_COUNTER=100
+com.littlecloud.ac.WtpMsgHandlerRoot.DEV_USAGE_REPORT_INTERVAL_SECOND=1800
+com.littlecloud.ac.WtpMsgHandlerRoot.UNHEALTHY_SKIP_MESSAGE=0

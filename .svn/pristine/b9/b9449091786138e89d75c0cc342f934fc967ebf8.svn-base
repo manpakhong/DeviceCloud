@@ -1,0 +1,76 @@
+package com.littlecloud.util;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+
+public class CaptivePortalUtil {
+	private final static HashMap <String, String> byPassDomains = new HashMap<String, String>();
+	
+	public enum PORTAL_ACCESS_MODE {
+		fb_wifi
+	}
+	
+	static {
+		byPassDomains.clear();
+		byPassDomains.put("fb_like", "www.facebook.com facebook.com login.facebook.com www.login.facebook.com fbcdn.net www.fbcdn.net fbcdn.com www.fbcdn.com static.ak.fbcdn.net static.ak.connect.facebook.com connect.facebook.net www.connect.facebook.net apps.facebook.com connect.facebook.net");
+		byPassDomains.put("fb_checkin", "www.facebook.com facebook.com login.facebook.com www.login.facebook.com fbcdn.net www.fbcdn.net fbcdn.com www.fbcdn.com static.ak.fbcdn.net static.ak.connect.facebook.com connect.facebook.net www.connect.facebook.net apps.facebook.com connect.facebook.net");
+		byPassDomains.put("fb_share", "www.facebook.com facebook.com login.facebook.com www.login.facebook.com fbcdn.net www.fbcdn.net fbcdn.com www.fbcdn.com static.ak.fbcdn.net static.ak.connect.facebook.com connect.facebook.net www.connect.facebook.net apps.facebook.com connect.facebook.net");
+		byPassDomains.put("fb_wifi", "www.facebook.com facebook.com login.facebook.com www.login.facebook.com fbcdn.net www.fbcdn.net fbcdn.com www.fbcdn.com static.ak.fbcdn.net static.ak.connect.facebook.com connect.facebook.net www.connect.facebook.net apps.facebook.com connect.facebook.net");
+		byPassDomains.put("wechat_follow", "weixin.qq.com wx1.qq.com wx2.qq.com open.weixin.qq.com api.weixin.qq.com www.paipai.com");
+		byPassDomains.put("google_auth", "accounts.google.com www.googleapis.com www.google.com ssl.gstatic.com lh1.googleusercontent.com lh2.googleusercontent.com lh3.googleusercontent.com lh4.googleusercontent.com lh5.googleusercontent.com lh6.googleusercontent.com");
+		byPassDomains.put("weibo_follow", "api.weibo.com static.weibo.com");
+		byPassDomains.put("linkedin_follow", "api.linkedin.com www.linkedin.com");
+		byPassDomains.put("twitter_follow", "api.twitter.com www.twitter.com");
+		byPassDomains.put("instagram_follow", "api.instagram.com www.instagram.com");
+	}
+	
+	public static String getPassThruDomains(String mode) {
+		StringBuffer sb = new StringBuffer();
+		HashSet <String> domainList = new HashSet<String>();
+		
+		try {
+			if (mode != null) {
+				for (String accessMode: mode.split(",")) {
+					String domains = byPassDomains.get(accessMode.trim());
+					if (domains != null) {
+						domainList.addAll(Arrays.asList(domains.split(" ")));
+					}
+				}
+			}
+			
+			if (domainList.size() > 0) {
+				for (String domain: domainList) {
+					sb.append(domain);
+					sb.append(" ");
+				}
+			}
+			
+			return sb.toString().trim();
+		} finally {
+			sb = null;
+			domainList.clear();
+			domainList = null;
+		}
+	}
+	
+	public static String getPassThruDomains(List<String> modeList) {
+		
+		StringBuffer sb = new StringBuffer();
+		HashSet <String> domainList = new HashSet<String>();
+		
+		try {
+			for (String mode:modeList)
+			{
+				sb.append(getPassThruDomains(mode));
+				sb.append(" ");
+			}			
+			return sb.toString().trim();
+		} finally {
+			sb = null;
+			domainList.clear();
+			domainList = null;
+		}
+	}
+}

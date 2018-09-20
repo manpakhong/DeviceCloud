@@ -1,0 +1,99 @@
+package com.littlecloud.services;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+import java.util.TimeZone;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.ClientSsidUsagesDAO;
+import com.littlecloud.control.dao.DailyClientSsidUsagesDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.dao.branch.SnsOrganizationsDAO;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.report.DailyClientSsidUsages;
+import com.littlecloud.control.entity.report.DailyDeviceUsages;
+import com.littlecloud.control.entity.report.DeviceUsages;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.pool.model.DailyClientSsidUsageResult;
+import com.littlecloud.util.CalendarUtils;
+import com.littlecloud.util.CommonUtils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.util.DBUtil;
+
+public class ClientSsidDailyUsagesMgr {
+	private static final Logger log = Logger.getLogger(ClientSsidDailyUsagesMgr.class);
+	private String orgId;
+	private ClientSsidUsagesDAO clientSsidUsagesDao;
+	public ClientSsidDailyUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	private void init(){
+		try{
+			clientSsidUsagesDao = new ClientSsidUsagesDAO(orgId);
+		} catch (Exception e){
+			log.error("ClientSsidDailyUsagesMgr.init() - Exception:", e);
+		}
+	}
+	
+	public boolean doClientSsidDailyUsagesConsolidation(Calendar calFrom, Calendar calTo){
+		boolean isDone = false;
+		try{
+			isDone = doClientSsidDailyUsagesConsolidation(calFrom, calTo, null);
+		} catch (Exception e){
+			log.error("ClientSsidDailyUsagesMgr.doDeviceDailyUsagesConsolidation() - Exception: " + orgId, e);
+		}
+		return isDone;
+	}
+	
+	public boolean doClientSsidDailyUsagesConsolidation(Calendar calFrom, Calendar calTo, List<Networks> networkList ){
+		boolean isDone = false;
+		try {
+			if (networkList == null){
+				NetworksDAO networksDao = new NetworksDAO(orgId);
+				networkList = networksDao.getAllNetworks();
+			}
+//			
+//			if(networkList != null){	
+//				for (Networks network:networkList){
+//					if( network != null ){
+//						List<DailyClientSsidUsageResult> clientSsidList = clientSsidUsagesDAO.getSsidEncryptionByNetworkTimePeriod(network.getId(), startTime, endTime);
+//						if (clientSsidList !=null){
+//							for(DailyClientSsidUsageResult clientSsid:clientSsidList){
+//								if(clientSsid.getBssid()==null || clientSsid.getEssid()==null || clientSsid.getEncryption()==null)
+//									continue; // skip those invalid records
+//								
+//								DailyClientSsidUsages dailyClientSsidUsages = dailyClientSsidUsagesDAO.findByDeviceIdEssidEncryptionTime(network.getId(), clientSsid.getDeviceId(), clientSsid.getEssid(), clientSsid.getEncryption(), (int)(timeAdjWithTimezone/1000), clientSsid.getMac());
+//								if (dailyClientSsidUsages == null) {
+//									dailyClientSsidUsages = new DailyClientSsidUsages(network.getId(), clientSsid.getDeviceId(), null, clientSsid.getBssid(), clientSsid.getEssid(), clientSsid.getEncryption(), clientSsid.getMac(), clientSsid.getType(), new Date(timeAdjWithTimezone), (int)(timeAdjWithTimezone/1000));
+//									dailyClientSsidUsages.create();
+//									batchConnection.addBatch(dailyClientSsidUsages);
+//								}
+//							}
+//						} else {
+//							if (logger.isDebugEnabled())
+//								logger.debug("clientSsidList is null " + network.getId() + " " + startTime + " " + endTime);	
+//						}
+//					}
+//				}
+//			}
+//			
+//			batchConnection.commit();
+//			batchConnection.close();
+//
+//			
+//			
+			
+			
+			
+			
+		} catch(Exception e) {
+			log.error("ClientSsidDailyUsagesMgr.doClientSsidDailyUsagesConsolidation() - Exception: ", e);
+		}
+		return isDone;
+	}
+	
+}

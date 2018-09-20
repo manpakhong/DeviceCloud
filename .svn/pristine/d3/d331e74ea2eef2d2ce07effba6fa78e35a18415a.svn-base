@@ -1,0 +1,138 @@
+package com.littlecloud.services;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.DailyClientUsagesDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.report.ClientUsages;
+import com.littlecloud.control.entity.report.DailyClientUsages;
+import com.littlecloud.utils.CalendarUtils;
+//mapping to DailyClientUsagesDAO - 
+//it is weird that DAO and physical table naming not consistance - daily_client_usages, client_monthly_usages, client_usages 
+public class ClientDailyUsagesMgr {
+	private static final Logger log = Logger.getLogger(ClientDailyUsagesMgr.class);
+	private String orgId;
+	private DailyClientUsagesDAO clientDailyUsagesDao = null;
+	public ClientDailyUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	public void init(){
+		try{
+			clientDailyUsagesDao = new DailyClientUsagesDAO(orgId);
+		} catch (Exception e){
+			log.error("ClientDailyUsagesMgr.init() - Exception:", e);
+		}
+	}
+	public boolean saveClientDailyUsagesList(List<DailyClientUsages> clientDailyUsageList){
+		boolean areDone = false;
+		try{
+			areDone = clientDailyUsagesDao.saveClientDailyUsagesList(clientDailyUsageList);
+		} catch (Exception e){
+			log.error("ClientDailyUsagesMgr.saveClientDailyUsagesList() - Exception:", e);
+		}
+		return areDone;
+	}
+	
+	public boolean doClientDailyUsagesConsolidation(Calendar calFrom, Calendar calTo){
+		boolean isDone = false;
+		try{
+			isDone = doClientDailyUsagesConsolidation(calFrom, calTo, null);
+		} catch (Exception e){
+			log.error("ClientDailyUsagesMgr.doClientDailyUsagesConsolidation() - Exception: " + orgId, e);
+		}
+		return isDone;
+	}
+	
+	public List<DailyClientUsages> findByMacIpNetIdDevIdAndCalendarRange(
+			String mac, String ip, Integer deviceId, Integer networkId, Calendar calFrom, Calendar calTo){
+		List<DailyClientUsages> dailyClientUsageList = null;
+		try{
+			dailyClientUsageList = clientDailyUsagesDao.findByMacIpNetIdDevIdAndCalendarRange(mac, ip, deviceId, networkId, calFrom, calTo);
+		} catch (Exception e){
+			log.error("ClientDailyUsagesMgr.findByMacIpNetIdDevIdAndUnixTime() - Exception: ", e);
+		}
+		return dailyClientUsageList;
+	}
+	
+	public List<DailyClientUsages> getClientMonthlyUsagesRecords(Calendar calFrom, Calendar calTo){
+		List<DailyClientUsages> dailyClientUsageList = null;
+		try{
+			dailyClientUsageList = clientDailyUsagesDao.getClientMonthlyUsagesRecords(calFrom, calTo);
+		} catch (Exception e){
+			log.error("ClientDailyUsagesMgr.getClientMonthlyUsagesRecords() - Exception: ", e);
+		}
+		return dailyClientUsageList;
+	}
+	
+	public boolean doClientDailyUsagesConsolidation(Calendar calFrom, Calendar calTo, List<Networks> networkList){
+		boolean isDone = false;
+		try{
+			if (networkList == null){
+				NetworksDAO networksDao = new NetworksDAO(orgId);
+				networkList = networksDao.getAllNetworks();
+			}
+			if (networkList != null && networkList.size() > 0){
+				ClientUsagesMgr clientUsagesMgr = new ClientUsagesMgr(orgId);
+				OuiInfosMgr ouiInfosMgr = new OuiInfosMgr();
+				for (Networks network: networkList){
+					if (network != null){
+						List<ClientUsages> clientUsageList = clientUsagesMgr.getClientDailyUsagesRecords(calFrom, calTo, network.getId());
+						if (clientUsageList != null && clientUsageList.size() > 0){
+							ClientDailyUsagesMgr clientDailyUsagesMgr = new ClientDailyUsagesMgr(orgId);
+							List<DailyClientUsages> dailyClientUsageList = new ArrayList<DailyClientUsages>();
+							for(ClientUsages dailyObj : clientUsageList)  {
+								if(!dailyObj.getType().equals(ClientUsages.TYPE_WIRELESS)) { // skip non-wireless client if usage = 0
+									if(dailyObj.getRx() == 0.0 && dailyObj.getTx() == 0.0)
+										continue;
+								}
+								DailyClientUsages dailyRecord = new DailyClientUsages();
+								dailyRecord.setUnixtime(CalendarUtils.changeDate2Unixtime(dailyObj.getDatetime()));
+								dailyRecord.setNetworkId(dailyObj.getNetworkId());
+								dailyRecord.setDeviceId(dailyObj.getDeviceId());
+								dailyRecord.setMac(dailyObj.getMac());
+								dailyRecord.setIp(dailyObj.getIp());
+								dailyRecord.setRx(dailyObj.getRx());
+								dailyRecord.setTx(dailyObj.getTx());
+								dailyRecord.setName(dailyObj.getName());
+								dailyRecord.setType(dailyObj.getType());
+								dailyRecord.setDatetime(dailyObj.getDatetime());
+								if (dailyObj.getMac() != null){
+									String manufacturer = ouiInfosMgr.getManufacturer(dailyObj.getMac());
+									if (manufacturer != null){
+										dailyRecord.setManufacturer(manufacturer);
+									}
+								}
+								List<DailyClientUsages> preDailyUsageList = clientDailyUsagesMgr.findByMacIpNetIdDevIdAndCalendarRange(dailyRecord.getMac(), dailyRecord.getIp(), dailyRecord.getDeviceId(), dailyRecord.getNetworkId(), calFrom, calTo);
+								if (preDailyUsageList != null && preDailyUsageList.size() > 0){
+									DailyClientUsages preDailyClientUsage = preDailyUsageList.get(0);
+									if( preDailyClientUsage != null ) {
+										dailyRecord.setId(preDailyClientUsage.getId());
+									}
+									dailyRecord.replace();
+								}
+								dailyClientUsageList.add(dailyRecord);
+							} // end for(ClientUsages dailyObj : clientUsageList)	
+							
+							if (dailyClientUsageList != null && dailyClientUsageList.size() > 0){
+								boolean areSaved = saveClientDailyUsagesList(dailyClientUsageList);
+								if (!areSaved){
+									log.warnf("ClientDailyUsagesMgr.doClientDailyUsagesConsolidation() - areSaved: %s, dailyClientUsageList: %s", areSaved, dailyClientUsageList);
+								}
+							}
+						} // end if (clientUsageList != null)
+					} // end if (network != null)
+				} // end for (Networks network: networkList)
+				isDone = true;
+			} // end if (networkList != null && networkList.size() > 0)			
+		} catch (Exception e){
+			log.error("ClientDailyUsagesMgr.doClientDailyUsagesConsolidation() - Exception: " + orgId, e);
+		}
+		return isDone;
+	}
+}

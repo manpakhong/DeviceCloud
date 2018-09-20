@@ -1,0 +1,137 @@
+package com.littlecloud.control.dao;
+
+// Generated Apr 15, 2013 12:32:59 PM by Hibernate Tools 4.0.0
+
+import java.sql.SQLException;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.entity.branch.DeviceFirmwareSchedules;
+import com.littlecloud.control.entity.report.DeviceGpsLocationsDates;
+import com.littlecloud.control.entity.report.DeviceGpsLocationsDatesId;
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+import com.peplink.api.db.query.Criteria;
+
+/**
+ * Home object for domain model class Devices.
+ * 
+ * @see com.littlecloud.control.entity.Devices
+ * @author Hibernate Tools
+ */
+public class DeviceGpsLocationsDatesDAO extends BaseDAO<DeviceGpsLocationsDates, DeviceGpsLocationsDatesId> {
+
+	private static final Logger log = Logger.getLogger(DeviceGpsLocationsDatesDAO.class);
+
+	public DeviceGpsLocationsDatesDAO() throws SQLException {
+		super(DeviceGpsLocationsDates.class);
+	}
+
+	public DeviceGpsLocationsDatesDAO(String orgId) throws SQLException {
+		super(DeviceGpsLocationsDates.class, orgId);
+	}
+
+	public DeviceGpsLocationsDatesDAO(String orgId, boolean readonly) throws SQLException {
+		super(DeviceGpsLocationsDates.class, orgId, readonly);
+	}
+	
+	public List<DeviceGpsLocationsDates> getDeviceGpsLocationsDatesList(Integer network_id, Integer dev_id) throws SQLException{
+		DBConnection session = getSession();
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceGpsLocationsDates.class);
+			query.addCriteria("network_id", Criteria.EQ, network_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", Criteria.EQ, dev_id);
+			return (List<DeviceGpsLocationsDates>)query.executeQueryAsObject();
+		}catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if (session!=null) session.close();
+		}
+	}
+
+	public List<DeviceGpsLocationsDates> getDeviceGpsLocationsDatesRange(Integer network_id, Integer dev_id, Integer from, Integer to) throws SQLException{
+		DBConnection session = getSession();
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceGpsLocationsDates.class);
+			query.addCriteria("network_id", Criteria.EQ, network_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", Criteria.EQ, dev_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", Criteria.GE, from);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", Criteria.LE, to);
+			return (List<DeviceGpsLocationsDates>)query.executeQueryAsObject();
+		}catch (SQLException e)
+		{
+			throw e;
+		} finally 
+		{
+			if (session!=null) session.close();
+		}
+	}
+
+	public DeviceGpsLocationsDates getDeviceGpsLocationsDates(Integer network_id, Integer dev_id, Integer unixtime) throws SQLException{
+		DBConnection session = getSession();
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceGpsLocationsDates.class);
+			query.addCriteria("network_id", Criteria.EQ, network_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", Criteria.EQ, dev_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", Criteria.EQ, unixtime);
+			return (DeviceGpsLocationsDates)query.executeQueryAsSingleObject();
+		}catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if (session!=null) session.close();
+		}
+	}
+
+	public int deleteDeviceGpsLocationsDatesByNetId(Integer network_id) throws SQLException
+	{
+		DBConnection session = getSession();
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceGpsLocationsDates.class);
+			
+			String sql = "delete from " + query.getDBName() + ".device_gps_locations_dates where network_id = " + network_id;
+			int result = query.executeUpdate(sql);
+			
+			return result;
+		}catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if (session!=null) session.close();
+		}
+	}
+	
+	public void saveOrUpdate(DeviceGpsLocationsDates deviceGpsLocationsDates) throws SQLException{
+		log.debug("saveIfNotExist " + this.persistentClass.getSimpleName() + " instance");
+		DBConnection session = getSession();
+		try {			
+			session.saveIfNotExist(deviceGpsLocationsDates);		
+			log.debug("saveOrUpdate successful");
+		} catch (RuntimeException re) {
+			log.error("saveOrUpdate failed", re);
+			throw re;
+		} finally {
+			if (session!=null) session.close();
+		}
+	}
+}

@@ -1,0 +1,266 @@
+package com.littlecloud.control.dao;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.entity.report.DeviceDailyDpiUsages;
+import com.littlecloud.control.entity.report.DeviceMonthlyDpiUsages;
+import com.littlecloud.pool.utils.Utils;
+import com.littlecloud.utils.CalendarUtils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+import com.peplink.api.db.util.DBUtil;
+
+public class DeviceMonthlyDpiUsagesDAO extends BaseDAO<DeviceMonthlyDpiUsages, Integer>
+{
+	private static final Logger logger = Logger.getLogger(DeviceMonthlyDpiUsagesDAO.class);
+	
+	public DeviceMonthlyDpiUsagesDAO() throws SQLException
+	{
+		super(DeviceMonthlyDpiUsages.class);
+	}
+	
+	public DeviceMonthlyDpiUsagesDAO(String orgId) throws SQLException
+	{
+		super(DeviceMonthlyDpiUsages.class,orgId);
+	}
+	
+	public DeviceMonthlyDpiUsagesDAO(String orgId, boolean readonly) throws SQLException
+	{
+		super(DeviceMonthlyDpiUsages.class,orgId,readonly);
+	}
+	
+	public boolean saveDeviceDpiMonthlyUsagesList(List<DeviceMonthlyDpiUsages> deviceMonthlyDpiUsageList) throws SQLException{
+		boolean isSave = false;
+		try{
+			DBUtil dbUtil = DBUtil.getInstance();
+			dbUtil.startSession();
+			DBConnection batchConnection = dbUtil.getConnection(false, orgId, false);
+			if (deviceMonthlyDpiUsageList != null && deviceMonthlyDpiUsageList.size() > 0){
+				for (DeviceMonthlyDpiUsages deviceMonthlyDpiUsages: deviceMonthlyDpiUsageList){
+					batchConnection.addBatch(deviceMonthlyDpiUsages);
+				}
+			}
+			batchConnection.commit();
+			batchConnection.close();
+			if(dbUtil.isSessionStarted()){
+				dbUtil.endSession();
+			}
+			isSave = true;
+		}
+		catch(Exception e){
+			logger.error("DeviceDMonthlyDpiUsagesDAO.saveDeviceDpiMonthlyUsagesList() - Exception: ", e);
+		}
+		finally{
+			if(dbUtil.isSessionStarted()) {
+				dbUtil.endSession();
+			}
+		}
+		return isSave;
+	}
+	
+	public List<DeviceMonthlyDpiUsages> findByNetworkIdDeviceIdProtocolCalendarRange(
+			Integer networkId, Integer deviceId, String protocol, Calendar calFrom, Calendar calTo) throws SQLException{
+		List<DeviceMonthlyDpiUsages> results = null;
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try{
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			StringBuilder sbSql = new StringBuilder();
+			sbSql.append("select ");
+			sbSql.append("id, ");
+			sbSql.append("network_id, ");
+			sbSql.append("device_id, ");
+			sbSql.append("from_unixtime(unixtime) as datetime, ");
+			sbSql.append("unixtime, ");
+			sbSql.append("service, ");
+			sbSql.append("size ");
+			sbSql.append("from ");
+			sbSql.append(dbname + ".device_monthly_dpi_usages ");
+			sbSql.append("where ");
+			sbSql.append("date(from_unixtime(unixtime)) ");
+			sbSql.append("between ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calFrom) + "' ");
+			sbSql.append("and ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calTo) + "' ");
+			sbSql.append("and ");
+			sbSql.append("service = '" + protocol + "' ");
+			sbSql.append("and ");
+			sbSql.append("network_id = " + networkId + " ");
+			sbSql.append("and ");
+			sbSql.append("device_id = " + deviceId + " ");			
+			sbSql.append("order by ");
+			sbSql.append("datetime ");
+			if (logger.isInfoEnabled()){
+				logger.info("DeviceMonthlyDpiUsagesDAO.findByNetworkIdDeviceIdProtocolCalendarRange() - sql : " + sbSql.toString());
+			}
+			rs = query.executeQuery(sbSql.toString());
+			results = new ArrayList<DeviceMonthlyDpiUsages>();
+			while (rs.next()){
+				DeviceMonthlyDpiUsages deviceMonthlyDpiUsage = new DeviceMonthlyDpiUsages();
+				deviceMonthlyDpiUsage.setId(rs.getInt("id"));
+				deviceMonthlyDpiUsage.setNetwork_id(rs.getInt("network_id"));
+				deviceMonthlyDpiUsage.setDevice_id(rs.getInt("device_id"));
+				deviceMonthlyDpiUsage.setDatetime((Date) rs.getObject("datetime"));
+				deviceMonthlyDpiUsage.setUnixtime(rs.getInt("unixtime"));
+				deviceMonthlyDpiUsage.setService(rs.getString("service"));
+				deviceMonthlyDpiUsage.setSize(rs.getLong("size"));
+				results.add(deviceMonthlyDpiUsage);
+			}
+		} 
+		catch( Exception e ){
+			logger.error("DeviceMonthlyDpiUsagesDAO.findByNetworkIdDeviceIdProtocolCalendarRange() - Exception:",e);
+		}
+		finally{
+			if(rs != null){
+				rs.close();
+				rs = null;				
+			}
+			if(session != null ){
+				session.close();
+				session = null;
+			}
+		}
+		return results;
+	}
+	
+	public DeviceMonthlyDpiUsages findByNetworkIdDeviceIdUnixtimeAndProtocol(Integer networkId,Integer deviceId,Integer unixtime,String protocol) throws SQLException
+	{
+		DeviceMonthlyDpiUsages result = null;
+		DBConnection session = getSession();
+		
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceMonthlyDpiUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, networkId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, deviceId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", com.peplink.api.db.query.Criteria.EQ, unixtime);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("service", com.peplink.api.db.query.Criteria.EQ, protocol);
+			result = (DeviceMonthlyDpiUsages)query.executeQueryAsSingleObject();
+		}
+		catch (SQLException e)
+		{
+			throw e;
+		}
+		finally
+		{
+			if (session!=null) session.close();
+		}
+		
+		return result;
+	}
+	
+	public DeviceMonthlyDpiUsages getMonthlyTotalServiceSize(int network_id, int device_id, int start , int end) throws SQLException
+	{
+		DeviceMonthlyDpiUsages result = null;
+		DBConnection session = getSession();
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceMonthlyDpiUsages.class);
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "select network_id, device_id, service, sum(size) as size from " + dbname + ".device_monthly_dpi_usages where network_id = " + network_id 
+					+ " and device_id = " +device_id+ " and unixtime >= " +start+ " and unixtime < " +end+ " group by network_id,device_id";
+			logger.info("device dpi usage : " + sql);
+			result = (DeviceMonthlyDpiUsages)query.executeQueryAsSingleObject(sql);
+		}
+		catch (Exception e)
+		{
+			throw e;
+		}
+		finally
+		{
+			if (session!=null) session.close();
+		}
+		return result;
+	}
+	
+	public List<DeviceMonthlyDpiUsages> getMonthlyServiceSize(int networkId, int device_id, int start, int end, int top) throws SQLException
+	{
+		List<DeviceMonthlyDpiUsages> result = null;
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceMonthlyDpiUsages.class);
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "select network_id, device_id, service, sum(size) as size from " + dbname + ".device_monthly_dpi_usages where network_id = " + networkId 
+					+ " and device_id = " +device_id+ " and unixtime >= " +start+ " and unixtime < " +end+ " group by service order by size desc limit "+top;
+			logger.info("Get daily dpi sql : " + sql);
+			rs = query.executeQuery(sql);
+			if( rs != null )
+			{
+				DeviceMonthlyDpiUsages usage = null;
+				result = new ArrayList<DeviceMonthlyDpiUsages>();
+				while( rs.next() )
+				{
+					usage = new DeviceMonthlyDpiUsages();
+					usage.setNetwork_id(rs.getInt("network_id"));
+					usage.setDevice_id(rs.getInt("device_id"));
+					usage.setService(rs.getString("service"));
+					usage.setSize(rs.getLong("size"));
+					result.add(usage);
+				}
+			}
+		}
+		catch (Exception e)
+		{
+			throw e;
+		}
+		finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;
+			}
+			if(session != null)
+			{
+				session.close();
+				session = null;
+			}
+		}
+		return result;
+	}
+	
+	public List<DeviceMonthlyDpiUsages> getMonthlyRecords(int networkId, int device_id, String service, int start, int end) throws SQLException
+	{
+		List<DeviceMonthlyDpiUsages> result = null;
+		DBConnection session = getSession();
+		
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceMonthlyDpiUsages.class);
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "select * from " + dbname + ".device_monthly_dpi_usages where network_id = " + networkId 
+					+ " and device_id = " +device_id+ " and service = '" +service+"' and unixtime >= " +start+ " and unixtime < " +end+ " order by unixtime" ;
+			logger.info("Get daily dpi sql : " + sql);
+			result = (List<DeviceMonthlyDpiUsages>)query.executeQueryAsObject(sql);
+		}
+		catch (Exception e)
+		{
+			throw e;
+		}
+		finally
+		{
+			if (session!=null) 
+				session.close();
+		}
+		return result;
+	}
+	
+}

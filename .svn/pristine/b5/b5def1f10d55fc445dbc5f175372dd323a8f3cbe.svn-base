@@ -1,0 +1,222 @@
+package com.littlecloud.services;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.NetworkSliencePeriodsDAO;
+import com.littlecloud.control.dao.TagsDAO;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.NetworkSilencePeriods;
+import com.littlecloud.control.entity.NetworkSilencePeriods.TARGET_TYPE;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.Tags;
+import com.littlecloud.pool.object.utils.DeviceTagsUtils;
+import com.littlecloud.pool.object.utils.NetUtils;
+import com.littlecloud.pool.object.utils.OrgInfoUtils;
+import com.littlecloud.services.criteria.Date2CalendarCriteria;
+import com.littlecloud.util.CalendarUtils;
+import com.littlecloud.util.CommonUtils;
+
+public class NetworkSilencePeriodsMgr {
+	private static final Logger log = Logger.getLogger(NetworkSilencePeriodsMgr.class);
+	
+	private String orgId;
+	public NetworkSilencePeriodsMgr(String orgId){
+		this.orgId = orgId;
+	}
+	
+	public List<Devices> getDeviceListNotInSilencePeriod(Networks network, String orgId){
+		List<Devices> devicesList = null;
+		try {
+			if (network != null){
+				NetworkSliencePeriodsDAO networkSilencePeriodsDao = new NetworkSliencePeriodsDAO(orgId);
+				NetworkSilencePeriods networkSilencePeriod = networkSilencePeriodsDao.findById(network.getId());
+				if (networkSilencePeriod != null && networkSilencePeriod.getTargetType() != null){
+					boolean isWithinSilencePeriod = isCurrentTimeWithinSilencePeriod(networkSilencePeriod, network);
+					if (!isWithinSilencePeriod){
+						TARGET_TYPE type = TARGET_TYPE.valueOf(networkSilencePeriod.getTargetType());						
+						switch (type){
+							case all_devices:
+								if (log.isDebugEnabled()){
+									log.debugf("ALERT201408211034 - NetworkSilencePeriodMgr.getDeviceListNotInSilencePeriod(), type is all_devices, networkId: %s, orgId: %s", network.getId(), orgId);
+								}
+								devicesList = NetUtils.getDeviceLstByNetId(orgId, network.getId());
+								break;
+							case device_tags:
+								if (log.isDebugEnabled()){
+									log.debugf("ALERT201408211034 - NetworkSilencePeriodMgr.getDeviceListNotInSilencePeriod(), type is device_tags, networkId: %s, orgId: %s",network.getId(), orgId);
+								}
+								if (networkSilencePeriod.getDeviceTags() != null){
+									String [] tagArray = getNetworkSilencePeriodDeviceTags(networkSilencePeriod);
+									if (tagArray != null && tagArray.length > 0){
+										List<Devices> comboDevicesList = new ArrayList<Devices>();
+										for (String tagName: tagArray){
+											TagsDAO tagsDao = new TagsDAO(orgId);
+											Tags tag = tagsDao.findByName(tagName);
+
+											if (tag != null){
+												devicesList = DeviceTagsUtils.getDeviceListByTagsId(tag.getId().intValue(), orgId, network.getId());
+												if (devicesList != null && devicesList.size() > 0){
+													comboDevicesList.addAll(devicesList);
+												}
+											}
+										}
+										devicesList = comboDevicesList;
+									}
+								}
+								break;
+						}
+					}
+				}
+			} // end if (network != null)
+			
+			
+		} catch (Exception e){
+			
+		}
+		return devicesList;
+	}
+	
+	public boolean isDeviceWithinSilencePeriod(Devices device){
+		boolean isWithinSilencePeriod = false;
+		try{
+			if (device != null){
+				Networks network = OrgInfoUtils.getNetwork(orgId, device.getNetworkId());
+				if (network != null && network.getId() != null){
+					NetworkSliencePeriodsDAO networkSilencePeriodsDao = new NetworkSliencePeriodsDAO(orgId);
+					NetworkSilencePeriods networkSilencePeriod = networkSilencePeriodsDao.findById(network.getId());
+					if (networkSilencePeriod != null && networkSilencePeriod.getTargetType() != null){
+						TARGET_TYPE type = TARGET_TYPE.valueOf(networkSilencePeriod.getTargetType());						
+						switch (type){
+							case all_devices:
+								isWithinSilencePeriod = isCurrentTimeWithinSilencePeriod(networkSilencePeriod, network);
+								if (log.isDebugEnabled()){
+									log.debugf("ALERT201408211034 - NetworkSilencePeriodMgr.isCurrentTimeWithinSilencePeriod(), isWithinSilencePeriod: %s, device: %s, type is all_devices",isWithinSilencePeriod, device);
+								}
+								break;
+							case device_tags:
+								if (isDeviceInTagOfNetworkSilencePeriod(device, networkSilencePeriod)){
+									isWithinSilencePeriod = isCurrentTimeWithinSilencePeriod(networkSilencePeriod, network);
+								}
+								if (log.isDebugEnabled()){
+									log.debugf("ALERT201408211034 - NetworkSilencePeriodMgr.isCurrentTimeWithinSilencePeriod(), isWithinSilencePeriod:%s, device: %s, type is device_tags",isWithinSilencePeriod, device);
+								}
+								break;
+						}
+					}
+				} else {
+					log.warnf("ALERT201408211034 - NetworkSilencePeriodMgr.isDeviceWithinSilencePeriod(), network is null!!!");
+				}
+			} else {
+				log.warnf("ALERT201408211034 - NetworkSilencePeriodMgr.isDeviceWithinSilencePeriod(), device is null!!!");
+			}
+		} catch (Exception e){
+			log.error("ALERT201408211034 - NetworkSilencePeriodMgr.isDeviceWithinSilencePeriod()", e);
+		}
+		return isWithinSilencePeriod;
+	}
+		
+	// format in database: e.g. 00:02, 06:00, 22:00
+	private Date2CalendarCriteria convertNetworkSilencePeriodsTimeString(String start_or_end){
+		Date2CalendarCriteria d2cCriteria = null;
+		try{
+			List<String> matchList = CommonUtils.regMatch(start_or_end, "\\d{2}:\\d{2}");
+			if (matchList.size() == 1){
+				String matched = matchList.get(0);
+				String [] matchedArray = matched.split(":");
+				
+				if (matchedArray.length == 2){
+					d2cCriteria = new Date2CalendarCriteria();
+					Integer hour = Integer.parseInt(matchedArray[0]);
+					Integer minute = Integer.parseInt(matchedArray[1]);
+					
+					d2cCriteria.setHour(hour);
+					d2cCriteria.setMinute(minute);
+				}
+			} else {
+				log.warnf("ALERT201408211034 - NetworkSilencePeriodMgr.convertNetworkSilencePeriodsTimeString(), start_or_end date format not time format!!! : %s", start_or_end);
+			}
+			
+			
+		} catch (Exception e){
+			log.error("ALERT201408211034 - NetworkSilencePeriodMgr.convertNetworkSilencePeriodsTimeString()", e);
+		}
+		return d2cCriteria;
+	}
+	
+	private boolean isCurrentTimeWithinSilencePeriod(NetworkSilencePeriods networkSilencePeriod, Networks network){
+		boolean isCurrentTimeWithinSilencePeriod = false;
+		try{
+			if (networkSilencePeriod != null && network != null && network.isSilencePeriodEnabled()
+					&& networkSilencePeriod.getStart() != null 
+					&& networkSilencePeriod.getEnd() != null){
+				Calendar calCurrent = CalendarUtils.getUtcCurrentCalendarByNetwork(network);
+				
+				Date2CalendarCriteria d2cCriteriaStart = convertNetworkSilencePeriodsTimeString(networkSilencePeriod.getStart());
+				Calendar calStart = CalendarUtils.getUtcCalendarByNetwork(network, d2cCriteriaStart);
+				
+				Date2CalendarCriteria d2cCriteriaEnd = convertNetworkSilencePeriodsTimeString(networkSilencePeriod.getEnd());
+				Calendar calEnd = CalendarUtils.getUtcCalendarByNetwork(network, d2cCriteriaEnd);
+				
+				if (log.isDebugEnabled()){
+					log.debugf("ALERT201408211034 - NetworkSilencePeriodMgr.isCurrentTimeWithinSilencePeriod(), network: %s, calStart: %s, calEnd: %s", network, calStart.toString(), calEnd.toString());
+				}
+				
+				if (calStart.after(calEnd)){
+					calEnd.add(Calendar.DAY_OF_MONTH, 1);
+				}
+				
+				if (calCurrent.after(calStart) && calCurrent.before(calEnd)){
+					isCurrentTimeWithinSilencePeriod = true;
+				}
+			}
+		} catch (Exception e){
+			log.error("ALERT201408211034 - NetworkSilencePeriodMgr.isCurrentTimeWithinSilencePeriod()", e);
+		}
+		return isCurrentTimeWithinSilencePeriod;
+	}
+	
+	
+	private boolean isDeviceInTagOfNetworkSilencePeriod(Devices device, NetworkSilencePeriods networkSilencePeriod){
+		boolean isDeviceInTag = false;
+		try{
+			if (networkSilencePeriod != null && device != null){
+				TagsDAO tagsDao = new TagsDAO(orgId);
+				List<Tags> tagList = tagsDao.getAllTagsByDeviceId(device.getId());
+				if (log.isDebugEnabled()){
+					log.debugf("ALERT201408211034 - NetworkSilencePeriodMgr.isCurrentTimeWithinSilencePeriod(), device: %s, tagList: %s", device, tagList);
+				}
+				if (tagList != null && networkSilencePeriod.getDeviceTags() != null){
+					String [] netSilencePeriodTagsArray = getNetworkSilencePeriodDeviceTags(networkSilencePeriod);
+					if (netSilencePeriodTagsArray != null && netSilencePeriodTagsArray.length > 0){
+						for (Tags tag : tagList){
+							for (String netSilencePeriodTag: netSilencePeriodTagsArray){
+								if (tag.getName() != null && tag.getName().equals(netSilencePeriodTag)){
+									isDeviceInTag = true;
+									break;
+								}
+							}
+						}
+					}
+				}
+			} else {
+				log.warnf("ALERT201408211034 - NetworkSilencePeriodMgr.isDeviceInTagOfNetworkSilencePeriod(), device: %s or networkSilencePeriod: %s null!!!", device, networkSilencePeriod);
+			}
+		} catch (Exception e){
+			log.error("ALERT201408211034 - NetworkSilencePeriodMgr.isDeviceInTagOfNetworkSilencePeriod()", e);
+		}
+		return isDeviceInTag;
+	}
+	
+	private String [] getNetworkSilencePeriodDeviceTags(NetworkSilencePeriods networkSilencePeriod){
+		String [] netSilencePeriodTagsArray = null;
+		if (networkSilencePeriod != null && networkSilencePeriod.getDeviceTags() != null){
+			netSilencePeriodTagsArray = networkSilencePeriod.getDeviceTags().split(" ");
+		}
+		return netSilencePeriodTagsArray;
+	}
+	
+}

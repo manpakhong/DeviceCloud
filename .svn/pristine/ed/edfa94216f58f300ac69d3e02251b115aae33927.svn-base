@@ -1,0 +1,334 @@
+package com.littlecloud.control.webservices.util;
+
+import java.sql.SQLException;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.DeviceFeaturesDAO;
+import com.littlecloud.control.dao.DeviceGpsLocationsDatesDAO;
+import com.littlecloud.control.dao.DevicesDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.entity.DeviceFeatures;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.branch.Products;
+import com.littlecloud.pool.object.utils.FeatureGetUtils;
+import com.littlecloud.pool.object.utils.OrgInfoUtils;
+import com.littlecloud.pool.object.utils.ProductUtils;
+import com.littlecloud.services.OfflineAlertCheckingMgr;
+
+public class NetworkUtils 
+{
+	public static enum FEATURE {
+		wifi, map, dpi, mastermode;
+	}
+	
+	private static final Logger log = Logger.getLogger(NetworkUtils.class);
+	
+	public static long getNetworkIdleThreshold(Networks network)
+	{
+		/* make sure it never mark offline on exception */
+		long idleThreshold = Long.MAX_VALUE;
+		
+		if (network==null)
+			return idleThreshold;
+		
+		if (network.isLowBandwidthMode()){
+			idleThreshold = OfflineAlertCheckingMgr.getLbIdleThreshold().longValue() * 60 * 1000;
+		}else{
+			idleThreshold = OfflineAlertCheckingMgr.getNormalIdleThreshold().longValue() * 60 * 1000;
+		}
+		
+		return idleThreshold;
+	}
+	
+	public static class NetFeature {
+				
+		private String value;
+
+		public String getValue() {
+			return value;
+		}
+
+		public void setValue(String value) {
+			this.value = value;
+		}
+
+		public NetFeature(String value) {
+			super();
+			this.value = value;
+		}
+		
+		public void addFeature(FEATURE f)
+		{
+			boolean isFound = false;
+			if( value != null )
+			{
+				String[] items = value.split("\\|");
+				if( items != null )
+				{
+					for( String item : items )
+					{
+						if( item.equals(f.name()) )
+						{
+							isFound = true;
+						}
+					}
+					
+					if( isFound == false && items.length > 0 )
+					{
+						if( items[0].equals("none") || items[0].isEmpty() )
+							this.value = f.name();
+						else
+							this.value += "|"+f.name();
+					}
+					
+				}
+			}
+			else
+			{
+				this.value = f.name();
+			}
+		}
+		
+		public void removeFeature(FEATURE f)
+		{
+			
+		}
+	}
+	
+	public static boolean updateNetworksFeature(String orgId, Integer networkId)
+	{
+		boolean isUpdate = false;
+		
+		boolean isWifiSupport = false;
+		boolean isMapSupport = false;
+		//boolean isMasterMode = false;
+		boolean isPepvpnSupport = false;
+		boolean isPortalSupport = false;
+		try
+		{
+			NetworksDAO networksDAO = new NetworksDAO(orgId);
+			DevicesDAO devicesDAO = new DevicesDAO(orgId, true);
+			DeviceFeaturesDAO deviceFeaturesDAO = new DeviceFeaturesDAO(orgId,true);
+			//ProductsDAO productsDAO = new ProductsDAO(true);
+			
+			Networks network = OrgInfoUtils.getNetwork(orgId, networkId);
+			if( network != null )
+			{
+				String net_feature = "";
+				Products product = null;
+				DeviceFeatures dev_feature = null;
+				
+				List<Devices> devices = devicesDAO.getDevicesList(networkId);
+				if( devices != null )
+				{
+					log.debugf("devices size = %d", devices.size());
+					for( Devices dev : devices )
+					{
+						//product = productsDAO.findById(dev.getProductId());
+						product = ProductUtils.getProducts(dev.getProductId());
+						dev_feature = deviceFeaturesDAO.findById(dev.getId());
+						
+						log.debugf("checking dev %d %s product %d %s", dev.getIanaId(), dev.getSn(), dev.getProductId(), product.getPortal_ic2());
+						
+						if( product.getRadio1_24G()==true ||
+							product.getRadio1_5G() ==true ||
+							product.getRadio2_24G()==true ||
+							product.getRadio2_5G() ==true )
+						{
+							isWifiSupport = true;
+						}
+						
+						// portal support
+						if(product.getPortal_ic2())
+						{
+							isPortalSupport = true;
+						}
+						
+						if( dev_feature != null && dev_feature.isGps_support() != null && dev_feature.isGps_support() )
+							isMapSupport = true;
+						else 
+						{
+							if( (dev.getLatitude() != 0f) || (dev.getLongitude() != 0f) )
+								isMapSupport = true;
+						}
+						
+						//pepvpn support
+						boolean vpn_support = FeatureGetUtils.isPepvpnFeatureSupport(dev_feature, product);
+						if( vpn_support )
+						{
+							isPepvpnSupport = true;
+						}
+						
+						if( isWifiSupport && isMapSupport && isPepvpnSupport && isPortalSupport)
+							break;
+						
+					}
+				}
+				
+				if( isWifiSupport==true )
+					net_feature = "wifi";
+				
+				if(isPortalSupport)
+				{
+					if (net_feature.isEmpty())
+						net_feature += "portal_ic2";
+					else
+						net_feature += "|portal_ic2";
+				}
+				
+				if( isMapSupport==true )
+				{
+					if( net_feature.isEmpty() )
+						net_feature += "map";
+					else
+						net_feature += "|map";
+				}
+				
+				if( isPepvpnSupport )
+				{
+					if( net_feature.isEmpty() )
+						net_feature += "pepvpn";
+					else
+						net_feature += "|pepvpn";
+				}
+				
+				/*
+				 * check master_device_id is null or not
+				 */
+				if (network != null && network.getMasterDeviceId() != null){
+					DevicesDAO devicesDao = new DevicesDAO(orgId); 
+					Devices masterDevices = devicesDao.getDevices(network.getMasterDeviceId());
+
+//					if (masterDevices != null ){
+//						isMasterMode = true;
+//					}
+				} // end if (networks != null
+
+				
+
+				
+				if( net_feature.isEmpty() == true )
+					net_feature = "none";
+				network.setFeatures(net_feature);
+				networksDAO.update(network);
+			}
+			else
+			{
+				log.warnf("network %d is null", networkId);
+			}
+
+		}
+		catch( Exception e )
+		{
+			log.error("Error is occured when update network feature : ",e);
+			return false;
+		}
+		
+		return isUpdate;
+	}
+	
+	
+	public static boolean isGpsTrackingDisabled(String orgId, Integer netId)
+	{
+		log.debug("getting Networks Gps_Support Group Wide Setting  with orgId: "+ orgId+" with netId: " +netId);
+		
+		if (orgId != null && netId != null) 
+		{
+			boolean support = false;
+			try
+			{
+				Networks networks = OrgInfoUtils.getNetwork(orgId, netId);
+			
+			if (networks != null && networks.isGps_tracking_disabled())
+				support = true;
+			/* Attention: For type Boolean, if Gps_tracking_disabled() = null, "networks.getGps_tracking_disabled() == true" caused NullPointerExecption !! */
+			return support;
+			
+			} catch (NullPointerException en) {
+				log.errorf("NullPointerException - Fail to get isGpsTrackingDisabled for orgId %s dev %d %s", orgId, netId, en);
+				
+			}catch (Exception e) {
+				log.errorf("Exception - Fail to get isGpsTrackingDisabled for orgId %s dev %d %s", orgId, netId, e);
+				
+			}
+		}
+		else
+		{
+			log.warnf("Fail to call isGpsTrackingDisabled with orgId %s netId %d ", orgId, netId);
+		}
+		return false;
+	}
+	
+	public static boolean isLowBandwidthMode(String orgId, Integer netId)
+	{
+		log.debug("getting Networks LowBandwidthMode Setting  with orgId: "+ orgId+" with netId: " +netId);
+		
+		if (orgId != null && netId != null) 
+		{
+			boolean support = false;
+			try
+			{
+				Networks networks = OrgInfoUtils.getNetwork(orgId, netId);
+				
+			if (networks != null && networks.isLowBandwidthMode()==true)
+				support = true;
+			
+			return support;
+			
+			} catch (Exception e) {
+				log.errorf("Exception %s - Fail to get LowBandwidthMode Setting for orgId %s dev %d %s", e, orgId, netId);
+				e.printStackTrace();
+			}
+		}
+		else
+		{
+			log.warnf("Fail to call isLowBandwidthMode with orgId %s netId %d ", orgId, netId);
+		}
+		return false;
+	}
+	
+	public static boolean removeDisabledGpsLocationDataByGroup(String orgId, Integer netId)
+	{
+		log.debug("getting Networks Gps_Support Group Wide Setting  with orgId: "+ orgId+" with netId: " +netId);
+		
+		if (orgId != null && netId != null) 
+		{
+			DeviceGpsLocationsDatesDAO deviceGpsLocationsDatesDAO;
+			
+			try
+			{
+				deviceGpsLocationsDatesDAO = new DeviceGpsLocationsDatesDAO(orgId);
+				
+				deviceGpsLocationsDatesDAO.deleteDeviceGpsLocationsDatesByNetId(netId);
+			
+				return true;
+			
+			} catch (SQLException e) {
+				log.errorf("Exception %s - Fail to removeDisabledGpsLocationDataByGroup for orgId %s dev %d %s", e, orgId, netId);
+				e.printStackTrace();
+			}
+		}
+		else
+		{
+			log.warnf("Fail to call removeDisabledGpsLocationDataByGroup with orgId %s netId %d ", orgId, netId);
+		}
+		
+		return false;
+	}
+	
+	
+	public static boolean isMasterGroupConfigEnabledNetwork(Networks net) throws Exception
+	{
+		if (net==null)
+			throw new Exception("net is null!");
+		
+		if (net.getMasterDeviceId()!=null && net.getMasterDeviceId()!=0)
+			return true;
+		
+		return false;
+	}
+	
+}

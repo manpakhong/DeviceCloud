@@ -1,0 +1,112 @@
+package com.littlecloud.helpers;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.NetworkEmailNotificationsDAO;
+import com.littlecloud.control.entity.NetworkEmailNotifications;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.util.CommonUtils;
+
+public class NetworkEmailNotificationsHelper {
+	private static final Logger log = Logger.getLogger(NetworkEmailNotificationsHelper.class);
+	private boolean isDeviceEmailEnabled = false;
+	private boolean isWanEmailEnable = false;
+	private boolean isSpeedfusionEmailEnabled = false;
+	private List<NetworkEmailNotifications> networkEmailNotificationList;
+	
+	
+	public NetworkEmailNotificationsHelper(Networks networks, String orgId){
+		this.networkEmailNotificationList = new ArrayList<NetworkEmailNotifications>();
+		runAndSetEmailEnabledFlags(networks, orgId);
+	}
+	
+	public NetworkEmailNotifications getNetworkEmailNotificationsByAlertType(String alertType, Integer level){
+		NetworkEmailNotifications networkEmailNotification = null;
+		try{
+			if (this.networkEmailNotificationList != null){
+				for (NetworkEmailNotifications nen: this.networkEmailNotificationList){
+					if (nen != null && nen.getAlertType() != null && nen.getAlertType().equals(alertType)){ 
+							if (nen.getLevel() != null && CommonUtils.isInteger(nen.getLevel())){
+								Integer nenLevel = new Integer(nen.getLevel());  
+									if (nenLevel.intValue() == level.intValue()){
+										networkEmailNotification = nen;
+										break;
+									}
+							}
+					}
+				}
+			}
+		} catch (Exception e){
+			log.error("EventLogMessageHelper.runAndSetEmailEnabledFlags()", e);
+		}
+		return networkEmailNotification;
+	}
+	
+	private void runAndSetEmailEnabledFlags(Networks network, String orgId){
+		try{
+			if (network != null && network.isEmailNotificationEnabled()){
+				NetworkEmailNotificationsDAO netEmailNotiDao = new NetworkEmailNotificationsDAO(orgId);
+				this.networkEmailNotificationList = netEmailNotiDao.getAllLevelContactForNetwork(network.getId());
+				if (log.isDebugEnabled()){
+					log.debugf("ALERT201408211034 - NetworkEmailNotificationsHelper.runAndSetEmailEnabledFlags() - networkEmailNotificationList: %s, orgId: %s, networkId: %s", this.networkEmailNotificationList, orgId, network.getId());
+				}
+				if (this.networkEmailNotificationList != null){
+					for (NetworkEmailNotifications netEmailNotifications: this.networkEmailNotificationList){
+						if (netEmailNotifications.getRecipientType() != null &&
+								netEmailNotifications.getEnabled() != null && 
+								netEmailNotifications.getEnabled() &&
+								netEmailNotifications.getAlertType() != null){
+							switch(netEmailNotifications.getAlertType()){
+								case NetworkEmailNotifications.ALERT_TYPE_WAN:
+									this.isWanEmailEnable = true;
+									break;
+								case NetworkEmailNotifications.ALERT_TYPE_SPEEDFUSION:
+									this.isSpeedfusionEmailEnabled = true;
+									break;
+								case NetworkEmailNotifications.ALERT_TYPE_DEVICE:
+									this.isDeviceEmailEnabled = true;
+									break;
+							}
+							
+						}
+					}
+				}
+				
+				
+			}	
+		} catch (Exception e){
+			log.errorf(e, "EventLogMessageHelper.runAndSetEmailEnabledFlags(), network: %s, org_id: %s", network, orgId);
+		}
+	}
+	
+	public boolean isDeviceEmailAlertEnabled(){
+		return isDeviceEmailEnabled;
+	}
+	
+	public boolean isWanEmailAlertEnabled(){
+		return isWanEmailEnable;
+	}
+	
+	public boolean isSpeedfusionEmailAlertEnabled(){
+		return isSpeedfusionEmailEnabled;
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append("NetworkEmailNotificationsHelper [isDeviceEmailEnabled=");
+		builder.append(isDeviceEmailEnabled);
+		builder.append(", isWanEmailEnable=");
+		builder.append(isWanEmailEnable);
+		builder.append(", isSpeedfusionEmailEnabled=");
+		builder.append(isSpeedfusionEmailEnabled);
+		builder.append(", networkEmailNotificationList=");
+		builder.append(networkEmailNotificationList);
+		builder.append("]");
+		return builder.toString();
+	}
+	
+}

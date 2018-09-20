@@ -1,0 +1,150 @@
+package com.littlecloud.services;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.dao.ClientUsagesDAO;
+import com.littlecloud.control.dao.DevicesDAO;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.report.ClientUsages;
+import com.littlecloud.helpers.ClientUsagesHelper;
+import com.littlecloud.pool.object.StationList;
+import com.littlecloud.pool.object.StationListObject;
+import com.littlecloud.pool.object.StationUsageObject;
+import com.littlecloud.pool.object.StationUsageObject.StationUsageList;
+import com.littlecloud.pool.object.utils.StationListObjectUtils;
+import com.littlecloud.pool.object.utils.StationUsageObjectUtils;
+import com.littlecloud.utils.CalendarUtils;
+
+public class ClientUsagesMgr {
+	private static final Logger log = Logger.getLogger(ClientUsagesMgr.class);
+	private String orgId;
+	private ClientUsagesDAO clientUsagesDao = null;
+	public ClientUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	public void init(){
+		try{
+			clientUsagesDao = new ClientUsagesDAO(orgId);
+		} catch (Exception e){
+			log.error("ClientUsagesMgr.init() - Exception: ", e);
+		}
+	}
+	
+	
+	public boolean doClientUsagesConsolidation(){
+		boolean isDone = false;
+		try{
+			isDone = doClientUsagesConsolidation(null);
+		} catch (Exception e){
+			log.error("ClientUsagesMgr.doClientUsagesConsolidation() - Exception:", e);
+		}
+		return isDone;
+	}	
+	public boolean doClientUsagesConsolidation(List<Devices> deviceList){
+		boolean isDone = false;
+		try{
+			if (deviceList == null){
+				DevicesDAO devicesDao = new DevicesDAO(orgId);
+				deviceList = devicesDao.getAllDevices();
+			}
+			
+			if (deviceList != null && deviceList.size() > 0){
+				List<ClientUsages> clientUsageList = new ArrayList<ClientUsages>();
+				for (Devices device: deviceList){
+					ClientUsagesHelper clientUsagesHelper = new ClientUsagesHelper(device.getIanaId(), device.getSn(), device.getNetworkId());
+					List<StationUsageList> stationUsageList = clientUsagesHelper.getStationUsageList();			
+
+					if (stationUsageList != null && stationUsageList.size() > 0){
+						for (StationUsageList stationUsageItem: stationUsageList){	
+							if(log.isInfoEnabled()) {
+								log.infof("StartPersistReportFromCache: Persist client usageitem: %s", stationUsageItem);
+							}
+	
+							String type = stationUsageItem.getType();
+							// don't save usage if rx & tx = 0 and type is static route client
+							if(!type.equals(StationUsageList.TYPE_WIRELESS)) {
+								if(stationUsageItem.getRx()==0.0 && stationUsageItem.getTx()==0.0)
+									continue; // skip 0/0 and static route client
+							}
+							
+							// if there is no mac in Station usage, then search mac from Station list
+							if(stationUsageItem.getMac() == null || stationUsageItem.getMac().isEmpty()){
+								StationList stationItem = clientUsagesHelper.getStationListItem(stationUsageItem.getIp());
+								if(stationItem !=null) {
+									stationUsageItem.setMac(stationItem.getMac());
+									stationUsageItem.setName(stationItem.getName());
+									type = stationItem.getType();
+								}
+							}
+							
+							// if there is still no mac, e.g. static route client, then set mac as IP instead
+							String macOrIp = stationUsageItem.getMac();
+							if (macOrIp == null || macOrIp.isEmpty()) {
+								macOrIp = stationUsageItem.getIp();
+							}
+							
+							long stationUsageItemTimeStamp = stationUsageItem.getTimestamp() * 1000;
+							Date utcTime = new Date(stationUsageItemTimeStamp);
+							ClientUsages clientUsage = new ClientUsages();
+							clientUsage.setNetworkId(device.getNetworkId());
+							clientUsage.setDeviceId(device.getId());
+							clientUsage.setMac(macOrIp);
+							clientUsage.setIp(stationUsageItem.getIp()); 
+							clientUsage.setName(stationUsageItem.getName()); 
+							clientUsage.setTx(stationUsageItem.getTx());
+							clientUsage.setRx(stationUsageItem.getRx());
+							clientUsage.setDatetime(utcTime);
+							clientUsage.setType(type);
+							clientUsage.setUnixtime(stationUsageItem.getTimestamp());
+							clientUsage.createReplace();	// insert on duplicate then update, duplication checking is based on unique index
+							if(log.isInfoEnabled()) {
+								log.infof("StartPersistReportFromCache: Persist clientUsages: %s", clientUsage);
+							}
+							clientUsageList.add(clientUsage);
+						}
+					}
+					
+					if (clientUsageList != null && clientUsageList.size() > 0){
+						boolean areSaved = saveClientUsagesList(clientUsageList);
+						if (!areSaved){
+							log.warnf("ClientUsagesMgr.doClientUsagesConsolidation() - areSaved: %s, clientUsageList: %s", areSaved, clientUsageList);
+						}
+					}
+					clientUsagesHelper.clearStationListFromStationUsageObjectAndUpdateCache();
+				} // end for (Devices device: deviceList)
+			} // end if (deviceList != null && deviceList.size() > 0)			
+		} catch (Exception e){
+			log.error("ClientUsagesMgr.doClientUsagesConsolidation() - Exception:", e);
+		}
+		return isDone;
+	}	
+	
+	public boolean saveClientUsagesList(List<ClientUsages> clientUsageList){
+		boolean areSaved = false;
+		try{
+			areSaved = clientUsagesDao.saveClientUsagesList(clientUsageList);
+		} catch (Exception e){
+			log.error("ClientUsagesMgr.saveClientUsagesList() - Exception:", e);
+		}
+		return areSaved;
+	}
+	
+	public List<ClientUsages> getClientDailyUsagesRecords(Calendar calFrom, Calendar calTo, Integer networkId){
+		List<ClientUsages> clientUsageList = null;
+		try{
+			clientUsageList = clientUsagesDao.getClientDailyUsagesRecords( calFrom, calTo, networkId);
+		} catch (Exception e){
+			log.error("ClientUsagesMgr.getClientDailyUsagesRecords() - Exception:", e);
+		}
+		return clientUsageList;
+	}
+}

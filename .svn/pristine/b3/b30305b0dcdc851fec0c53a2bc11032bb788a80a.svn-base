@@ -1,0 +1,322 @@
+package com.littlecloud.control.webservices;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Random;
+
+import javax.jws.WebMethod;
+import javax.jws.WebService;
+
+import org.jboss.logging.Logger;
+
+import com.google.gson.Gson;
+import com.littlecloud.ac.ACService;
+import com.littlecloud.ac.json.model.command.MessageType;
+import com.littlecloud.control.json.JsonResponse;
+import com.littlecloud.control.json.JsonResponse.ResponseCode;
+import com.littlecloud.control.json.model.Json_Client_Bandwidth_Usage;
+import com.littlecloud.control.json.model.Json_Clients;
+import com.littlecloud.control.json.model.Json_Device_Bandwidths;
+import com.littlecloud.control.json.model.Json_Device_ChannelUtilizations;
+import com.littlecloud.control.json.model.Json_Device_Configuration;
+import com.littlecloud.control.json.model.Json_Device_Locations;
+import com.littlecloud.control.json.model.Json_Device_Month;
+import com.littlecloud.control.json.model.Json_Device_Neighbor_List;
+import com.littlecloud.control.json.model.Json_Device_Timely_Usage;
+import com.littlecloud.control.json.model.Json_Devices;
+import com.littlecloud.control.json.model.Json_device_online_histories;
+import com.littlecloud.control.json.model.Json_nDpi_Report;
+import com.littlecloud.control.json.request.JsonDeviceRequest;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.control.json.util.JsonUtils;
+import com.littlecloud.control.webservices.handler.DeviceWsHandler;
+
+//@WebService(portName = "DataWs/DevicePort", serviceName = "DataWs/DeviceWs", targetNamespace="http://webservices.control.littlecloud.com/")
+@WebService()
+public class DeviceWs extends BaseWs {
+
+	private static final Logger log = Logger.getLogger(DeviceWs.class);
+
+	private enum HANDLER_NAME {
+		getInfo, getGPSLocationV2, getClientListV3, getDetail, getBandwidth, isEverGPSAvailable, getDeviceMonth,getStatusTime,getWanBandwidth,getWanClientUsage,
+		getDevicePepvpnStatus,getDeviceFeatures,getDeviceProductTypes,getDeviceConfigurations,getDeviceConfigurationFile,getDpiUsageReport,updateDeviceInformation,updateDevicesWarrantyDate
+		/*,getDevicePosition*/
+	};
+
+	private static <RESPONSE_ENTITY> String fetchWrapper(String json, HANDLER_NAME handlerName)
+	{
+		String result = null;
+		
+		int callStartTime = DateUtils.getUnixtime();
+		
+		result = BaseWs.<JsonDeviceRequest, RESPONSE_ENTITY>
+		fetch(json, JsonDeviceRequest.class, JsonResponse.class, DeviceWsHandler.class, handlerName.toString());
+		
+		int callUseTime = DateUtils.getUnixtime() - callStartTime;
+		
+		if (callUseTime > 60)
+			log.warnf("HANDLER_NAME %s DeviceWs %s has process for %d seconds", handlerName, json, callUseTime);
+		return result;
+	}
+
+	
+/*	@WebMethod()
+	public String removeDevice(String json) 
+	{
+		return DeviceWs.fetchWrapper(json, HANDLER_NAME.removeDevice);		
+	}*/
+	
+	@WebMethod()
+	public String getRequest() {
+		Gson gson = new Gson();
+
+		JsonDeviceRequest request = new JsonDeviceRequest();
+		request.setCaller_ref(genCallerRef());
+		request.setVersion("0.1");
+		request.setDevice_id(1);
+		request.setOrganization_id("test");
+		request.setStart(new Date());
+
+		String json = gson.toJson(request);
+		return json;
+	}
+
+	@WebMethod()
+	public String getBandwidth(String json)
+	{
+		return DeviceWs.<Json_Device_Bandwidths> fetchWrapper(json, HANDLER_NAME.getBandwidth);
+	}
+
+	@WebMethod()
+	public String getClientList(String json) 
+	{	
+		return DeviceWs.<List<Json_Clients>> fetchWrapper(json, HANDLER_NAME.getClientListV3);
+	}
+
+	@WebMethod()
+	public String getDetail(String json) 
+	{
+		Date start = new Date();
+		String s = DeviceWs.<Json_Devices> fetchWrapper(json, HANDLER_NAME.getDetail);
+		Date end = new Date();
+		log.info("get device detail use : " + (end.getTime() - start.getTime()) + " ms");
+		return s;
+	}
+
+	@WebMethod()
+	public String getInfo(String json)
+	{
+		return DeviceWs.<Json_Devices>fetchWrapper(json, HANDLER_NAME.getInfo);
+	}
+
+	/**
+	 * Get device GPS location for google map path plotting
+	 * <p>
+	 * This method always returns immediately, whether or not the latest location exists.
+	 * 
+	 * @param organization_id
+	 *            - the id of the organization in which the device belongs to.
+	 * @param device_id
+	 *            - the id of the device
+	 * @return Returns a history of device GPS location and append real time latest location.
+	 */
+	@WebMethod()
+	public String getGPSLocation(String json) 
+	{
+		long beforeGetLoc = System.currentTimeMillis();
+		String result = DeviceWs.<List<Json_Device_Locations>>fetchWrapper(json, HANDLER_NAME.getGPSLocationV2);
+		long afterGetLoc = System.currentTimeMillis();
+		
+//		System.out.println("-------- Result:::: beforeGetLoc " + beforeGetLoc + ", " + afterGetLoc + "=" + (afterGetLoc - beforeGetLoc));
+		
+		return result;
+	}
+	@WebMethod()
+	public String isEverGPSAvailable(String json) 
+	{
+		return DeviceWs.<Json_Device_Locations>fetchWrapper(json, HANDLER_NAME.isEverGPSAvailable);
+	}
+	@WebMethod()
+	public String getDeviceMonth(String json)
+	{
+		return DeviceWs.<List<Json_Device_Month>>fetchWrapper(json, HANDLER_NAME.getDeviceMonth);
+	}
+	@WebMethod()
+	public String getStatusTime(String json)
+	{
+		return DeviceWs.<List<Json_device_online_histories>>fetchWrapper(json, HANDLER_NAME.getStatusTime);
+	}
+	@WebMethod()
+	public String getChannelUtilization(String json) {
+
+		SimpleDateFormat smf = new java.text.SimpleDateFormat(JsonUtils.jsonUtcDateFormat);
+		// String curDate = smf.format(new Date());
+		String curDate = "20130313140000";
+
+		String serverRef = genServerRef();
+
+		JsonDeviceRequest request = JsonUtils.getRequestObject(json, JsonDeviceRequest.class);
+		JsonResponse<List<Json_Device_ChannelUtilizations>> response = JsonUtils.getResponseObject(request);
+		if (request == null)
+		{
+			response.setResp_code(ResponseCode.INVALID_INPUT);
+			response.setError(10001);
+			return JsonUtils.toJson(response);
+		}
+
+		if (request.getServer_ref() == null)
+		{
+			/* 2nd request for full response */
+			serverRef = request.getServer_ref();
+
+			/* check if caller_ref and server_ref exists */
+			String server_ref = "";
+//			try {
+//				server_ref = callerMap.get(request.getCaller_ref());
+//			} catch (NullPointerException e)
+//			{
+//				response.setResp_code(ResponseCode.INVALID_INPUT);
+//				return JsonUtils.toJson(response);
+//			}
+
+			if (request.getServer_ref() != server_ref)
+			{
+				response.setResp_code(ResponseCode.INVALID_INPUT);
+				return JsonUtils.toJson(response);
+			}
+
+			/* set old server_ref */
+			response.setCaller_ref(request.getCaller_ref());
+			response.setServer_ref(request.getServer_ref());
+		}
+		else
+		{
+			/* 1st request */
+			if (callerMap.containsKey(request.getCaller_ref()))
+			{
+				response.setResp_code(ResponseCode.INVALID_CALLER_REF);
+				return JsonUtils.toJson(response);
+			}
+
+			callerMap.put(request.getCaller_ref(), serverRef);
+			serverMap.put(serverRef, request.getCaller_ref());
+
+			/* set newly server_ref */
+			response.setCaller_ref(request.getCaller_ref());
+			response.setServer_ref(serverRef);
+		}
+
+		if (serverSuccessMap.containsKey(request.getServer_ref()) || randomSuccess())
+		{
+			/* success */
+			response.setResp_code(ResponseCode.SUCCESS);
+			if (!serverSuccessMap.containsKey(serverRef))
+				serverSuccessMap.put(serverRef, String.valueOf(request.getCount()));
+
+			// TreeMap<String, Long> timestamp_record = new TreeMap<String, Long>();
+			//
+						// if (serverSuccessMap.get(serverRef) == null)
+						// {
+						// timestamp_record.put("20130313150000", 34L);
+						// timestamp_record.put("20130313160000", 35L);
+						// timestamp_record.put("20130313170000", 37L);
+						// timestamp_record.put("20130313180000", 50L);
+						// timestamp_record.put("20130313190000", 180L);
+						// }
+						// else
+						// {
+						// timestamp_record.put("20130313000000", 120L);
+						// timestamp_record.put("20130314000000", 135L);
+						// timestamp_record.put("20130315000000", 180L);
+						// timestamp_record.put("20130316000000", 100L);
+						// timestamp_record.put("20130317000000", 111L);
+						// }
+
+						// response.setTimestamp_record(timestamp_record);
+			
+			List<Json_Device_ChannelUtilizations> stublist = new ArrayList<Json_Device_ChannelUtilizations>();
+			Json_Device_ChannelUtilizations stub = new Json_Device_ChannelUtilizations();
+			for (int i = 1; i < 10; i++)
+			{
+				stub.setPercentage(new Random().nextInt(100));
+				stublist.add(stub);
+			}
+
+			response.setData(stublist);
+		}
+		else
+		{
+			response.setResp_code(ResponseCode.PENDING);
+		}
+
+		return JsonUtils.toJson(response);
+	}
+	
+	@WebMethod()
+	public String getWanBandwidth(String json) 
+	{
+		return DeviceWs.<List<Json_Device_Timely_Usage>>fetchWrapper(json, HANDLER_NAME.getWanBandwidth);
+	}
+	
+	@WebMethod()
+	public String getWanClientUsage(String json) 
+	{
+		return DeviceWs.<List<Json_Client_Bandwidth_Usage>>fetchWrapper(json, HANDLER_NAME.getWanClientUsage);
+	}
+	
+	@WebMethod()
+	public String getDeviceFeatures(String json)
+	{
+		return DeviceWs.<Json_Devices>fetchWrapper(json, HANDLER_NAME.getDeviceFeatures);
+	}
+
+	@WebMethod()
+	public String getDevicePepvpnStatus(String json)
+	{
+		return DeviceWs.<Json_Devices>fetchWrapper(json, HANDLER_NAME.getDevicePepvpnStatus);
+	}
+
+	@WebMethod()
+	public String getDeviceProductTypes(String json)
+	{
+		return DeviceWs.<Json_Devices>fetchWrapper(json, HANDLER_NAME.getDeviceProductTypes);
+	}
+	
+	@WebMethod()
+	public String getDeviceConfigurations(String json)
+	{
+		return DeviceWs.<List<Json_Device_Configuration>>fetchWrapper(json, HANDLER_NAME.getDeviceConfigurations);
+	}
+	
+	@WebMethod()
+	public String getDeviceConfigurationFile(String json)
+	{
+		return DeviceWs.<Json_Device_Configuration>fetchWrapper(json, HANDLER_NAME.getDeviceConfigurationFile);
+	}
+
+	@WebMethod()
+	public String getDpiUsageReport(String json)
+	{
+		return DeviceWs.<List<Json_nDpi_Report>>fetchWrapper(json, HANDLER_NAME.getDpiUsageReport);
+	}
+	
+	@WebMethod()
+	public String updateDeviceInformation(String json)
+	{
+		return DeviceWs.<Json_Devices>fetchWrapper(json, HANDLER_NAME.updateDeviceInformation);
+	}
+	
+	@WebMethod()
+	public String updateDevicesWarrantyDate(String json)
+	{
+		return DeviceWs.<Json_Devices>fetchWrapper(json, HANDLER_NAME.updateDevicesWarrantyDate);
+	}
+	
+	/*
+	@WebMethod()
+	public static String getDevicePosition(String json){
+		return DeviceWs.<Json_Devices>fetchWrapper(json, HANDLER_NAME.getDevicePosition);
+	} */
+}

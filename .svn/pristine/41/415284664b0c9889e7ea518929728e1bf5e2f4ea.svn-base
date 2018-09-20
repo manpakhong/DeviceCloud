@@ -1,0 +1,218 @@
+package com.littlecloud.control.dao;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.entity.report.ClientMonthlyUsages;
+import com.littlecloud.control.entity.report.ClientMonthlyUsagesId;
+import com.littlecloud.control.entity.report.ClientUsages;
+import com.littlecloud.pool.utils.Utils;
+import com.littlecloud.util.CalendarUtils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+import com.peplink.api.db.util.DBUtil;
+
+public class ClientMonthlyUsagesDAO extends BaseDAO<ClientMonthlyUsages, String>
+{
+
+	private static final Logger log = Logger.getLogger(ClientMonthlyUsagesDAO.class);
+	
+	public ClientMonthlyUsagesDAO() throws SQLException 
+	{
+		super(ClientMonthlyUsages.class);
+	}
+	
+	public ClientMonthlyUsagesDAO( String orgId ) throws SQLException 
+	{
+		super(ClientMonthlyUsages.class, orgId);
+	}
+
+	public ClientMonthlyUsagesDAO( String orgId, boolean readonly ) throws SQLException 
+	{
+		super(ClientMonthlyUsages.class, orgId, readonly);
+	}
+
+	public List<ClientMonthlyUsages> findByMacIpNetIdDevIdAndCalendarRange(String mac, String ip, int networkId, int deviceId, Calendar calFrom, Calendar calTo) throws SQLException{
+		List<ClientMonthlyUsages> results = null;
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try{
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			StringBuilder sbSql = new StringBuilder();
+			sbSql.append("select ");
+			sbSql.append("id, ");
+			sbSql.append("network_id, ");
+			sbSql.append("device_id, ");
+			sbSql.append("mac, ");
+			sbSql.append("ip, ");
+			sbSql.append("tx, ");
+			sbSql.append("rx, ");
+			sbSql.append("type, ");
+			sbSql.append("datetime, ");
+			sbSql.append("unixtime ");
+			sbSql.append("from ");
+			sbSql.append(dbname + ".client_monthly_usages ");
+			sbSql.append("where ");
+			sbSql.append("datetime ");
+			sbSql.append("between ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calFrom) + "' ");
+			sbSql.append("and ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calTo) + "' ");
+			sbSql.append("and ");
+			sbSql.append("network_id = " + networkId + " ");
+			sbSql.append("and ");
+			sbSql.append("device_id = " + deviceId + " ");
+			sbSql.append("and ");
+			sbSql.append("ip = '" + ip + "' ");
+			sbSql.append("and ");
+			sbSql.append("mac = '" + mac + "' ");
+			if (log.isInfoEnabled()){
+				log.infof("ClientMonthlyUsagesDAO.getClientMonthlyUsagesRecords() - sql: %s" + sbSql.toString());
+			}
+			rs = query.executeQuery(sbSql.toString());
+			results = new ArrayList<ClientMonthlyUsages>();			
+			while (rs.next()) {
+				ClientMonthlyUsages clientMonthlyUsage = new ClientMonthlyUsages();
+				String id = rs.getString("id");
+				Integer unixtime = rs.getInt("unixtime");
+				ClientMonthlyUsagesId cmuId = new ClientMonthlyUsagesId();
+				cmuId.setId(id);
+				cmuId.setUnixtime(unixtime);
+				clientMonthlyUsage.setId(cmuId);
+				clientMonthlyUsage.setNetworkId(rs.getInt("network_id"));
+				clientMonthlyUsage.setDeviceId(rs.getInt("device_id"));
+				clientMonthlyUsage.setMac(rs.getString("mac"));
+				clientMonthlyUsage.setIp(rs.getString("ip"));
+				clientMonthlyUsage.setTx(rs.getFloat("tx"));
+				clientMonthlyUsage.setRx(rs.getFloat("rx"));
+				clientMonthlyUsage.setType(rs.getString("type"));
+				clientMonthlyUsage.setDatetime((Date) rs.getObject("datetime"));
+				clientMonthlyUsage.setUnixtime(unixtime);
+				results.add(clientMonthlyUsage);
+			}
+		}
+		catch( Exception e ){
+			log.error("ClientMonthlyUsagesDAO.getClientMonthlyUsagesRecords() - Exception:", e);
+		}
+		finally{
+			if(rs != null){
+				rs.close();
+				rs = null;				
+			}
+			if( session != null ){
+				session.close();
+				session = null;
+			}
+		}
+		return results;
+	}
+	
+	public ClientMonthlyUsages findByMacIpNetIdDevIdAndUnixtime( String mac, String ip, int unixtime, int netId, int devId ) throws SQLException
+	{
+		ClientMonthlyUsages result = null;
+		
+		DBConnection session = getSession();
+		
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(ClientMonthlyUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, netId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, devId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", com.peplink.api.db.query.Criteria.EQ, unixtime);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("ip", com.peplink.api.db.query.Criteria.EQ, ip);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("mac", com.peplink.api.db.query.Criteria.EQ, mac);
+			log.info(query.getQuery());
+			result = (ClientMonthlyUsages)query.executeQueryAsSingleObject();
+		}
+		catch( Exception e )
+		{
+			throw e;
+		}
+		finally
+		{
+			if( session != null )
+				session.close();
+		}
+		
+		return result;
+	}
+	
+
+	public List<ClientMonthlyUsages> getRecordsByNetworkIdAndDeviceIdAndStarttime(Integer netId, Integer devId, Integer start) throws SQLException {
+		List<ClientMonthlyUsages> result = new ArrayList<ClientMonthlyUsages>();
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		
+		try {
+			DBQuery query = session.createQuery();
+			query.setQueryClass(ClientMonthlyUsages.class);
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "select * from (select * from "+dbname+".client_monthly_usages where unixtime >= " + start + " and device_id = "+devId+" and network_id="+netId+" order by mac, tx+rx desc) as tmp group by mac";
+			rs = query.executeQuery(sql);
+			while (rs.next()) {
+				ClientMonthlyUsages client = new ClientMonthlyUsages();
+				client.setIp(rs.getString("ip"));
+				client.setMac(rs.getString("mac"));
+				client.setTx(rs.getFloat("tx"));
+				client.setRx(rs.getFloat("rx"));
+				client.setType(rs.getString("type"));
+				result.add(client);
+			}			
+		} catch( Exception e ) {
+			throw e;
+		} finally {
+			if(rs != null) {
+				rs.close();
+				rs = null;				
+			}
+			if( session != null ) {
+				session.close();
+				session = null;
+			}
+		}
+		
+		return result;
+	}
+	
+	public boolean saveClientMonthlyUsagesList(List<ClientMonthlyUsages> clientMonthlyUsageList) throws SQLException{
+		boolean isSave = false;
+		try{
+			DBUtil dbUtil = DBUtil.getInstance();
+			dbUtil.startSession();
+			DBConnection batchConnection = dbUtil.getConnection(false, orgId, false);
+			if (clientMonthlyUsageList != null && clientMonthlyUsageList.size() > 0){
+				for (ClientMonthlyUsages clientMonthlyUsage: clientMonthlyUsageList){
+					batchConnection.addBatch(clientMonthlyUsage);
+				}
+			}
+			batchConnection.commit();
+			batchConnection.close();
+			if(dbUtil.isSessionStarted()){
+				dbUtil.endSession();
+			}
+			isSave = true;
+		}
+		catch(Exception e){
+			log.error("ClientUsagesDAO.saveClientUsagesList() - Exception: ", e);
+		}
+		finally{
+			if(dbUtil.isSessionStarted()) {
+				dbUtil.endSession();
+			}
+		}
+		return isSave;
+	}
+}

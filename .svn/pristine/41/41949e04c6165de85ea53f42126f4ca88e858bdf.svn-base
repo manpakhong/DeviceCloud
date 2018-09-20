@@ -1,0 +1,164 @@
+package com.littlecloud.control.dao.root;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.dao.jdbc.BaseDaoInstances.InstanceType;
+import com.littlecloud.control.entity.root.RootBranches;
+import com.littlecloud.control.entity.root.RootBranchesTO;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+
+public class RootBranchesDAO extends BaseDAO<RootBranches, Integer> {
+
+	private static final Logger log = Logger.getLogger(RootBranchesDAO.class);
+
+	public RootBranchesDAO() throws SQLException {
+		super(RootBranches.class, InstanceType.IC2ROOT);
+	}
+
+	public String getServerTimezone() throws SQLException
+	{
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		String result = null;
+		try 
+		{		
+			DBQuery query = session.createQuery();
+			
+			rs = query.executeQuery("SELECT IF(@@session.time_zone = 'SYSTEM', @@system_time_zone, @@session.time_zone) as timezone;");
+			if (rs.next())
+			{
+				result = rs.getString("timezone");
+			}
+						
+			return result;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;
+			}
+			if(session != null)
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	public int monitorRootDb() throws SQLException {
+		Integer result = null;
+		
+		DBConnection session = null;	
+		ResultSet rs = null;
+		String dbName = null;
+		String sql = null;
+		try 
+		{
+			session = getSession();
+			DBQuery query = session.createQuery();
+			query.setQueryClass(RootBranchesTO.class);
+			dbName = query.getDBName();
+			sql = StringUtils.join(
+					"SELECT 1 as ok from "+dbName+".branches limit 1;");
+			if (log.isDebugEnabled()) log.debugf("sql=%s", sql);
+			
+			rs = query.executeQuery(sql);
+			if (rs.next())
+			{
+				result = rs.getInt("ok");
+			}
+			
+			if (result!=null)
+				return result;
+			else
+				return 0;
+			
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;
+			}
+			if(session != null)
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	@SuppressWarnings("unchecked")
+	public List<RootBranchesTO> getActiveRedirectionList() throws SQLException {
+		
+		List <RootBranchesTO> resultLst = new ArrayList<RootBranchesTO>();
+		
+		DBConnection session = null;	
+		ResultSet rs = null;
+		String dbName = null;
+		String sql = null;
+		try 
+		{
+			session = getSession();
+			DBQuery query = session.createQuery();
+			query.setQueryClass(RootBranchesTO.class);
+			dbName = query.getDBName();
+			sql = StringUtils.join(
+					"SELECT", 
+					" d.organization_id,", 
+					" p.iana_id,", 
+					" d.sn,", 
+					" b.ac1,", 
+					" b.ac1_port,", 
+					" b.ac2,", 
+					" b.ac2_port,",
+//					" b.ac3,", 
+//					" b.ac3_port,",
+					" b.status", 
+					" FROM ",dbName,".devices d", 
+					" INNER JOIN ",dbName,".organizations o", 
+					"   ON d.organization_id = o.id and o.status='active'", 
+					" INNER JOIN ",dbName,".branches b", 
+					"   ON o.branch_id = b.id and b.status=1", 
+					" INNER JOIN ",dbName,".products p", 
+					"   ON d.product_id = p.id",
+					" order by o.id asc, d.sn asc;");
+			resultLst = (List<RootBranchesTO>)query.executeQueryAsObject(sql);
+			
+			if (log.isDebugEnabled()) log.debugf("sql=%s", sql);
+			
+			return resultLst;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;
+			}
+			if(session != null)
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+}

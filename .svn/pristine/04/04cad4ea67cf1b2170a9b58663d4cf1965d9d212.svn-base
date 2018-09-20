@@ -1,0 +1,374 @@
+package com.littlecloud.ac;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.ACService.OP_MODE;
+import com.littlecloud.ac.json.model.command.MessageType;
+import com.littlecloud.ac.json.model.command.QueryInfo;
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.Devices.ONLINE_STATUS;
+import com.littlecloud.control.entity.branch.SnsOrganizations;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.control.json.util.JsonUtils;
+import com.littlecloud.pool.object.DevBandwidthObject;
+import com.littlecloud.pool.object.DevLocationsObject;
+import com.littlecloud.pool.object.DevOnlineObject;
+import com.littlecloud.pool.object.StationZObject;
+import com.littlecloud.pool.object.utils.BranchUtils;
+import com.littlecloud.pool.object.utils.NetUtils;
+import com.littlecloud.pool.object.utils.OrgInfoUtils;
+import com.littlecloud.ac.health.HealthMonitorHandler;
+
+public class WtpMsgHandlerUtils {
+	private static final int MIN_DEVLOC_INTERVAL = 2000;	// 2 sec
+	private static final int MIN_DEVBW_INTERVAL = 3000;	// 3 sec
+	private static final int MIN_AC_INTERVAL = 10;	// 10 sec
+	private static final int MIN_REG_INTERVAL = 60;	// 60 sec
+	private static final int MIN_LICENSE_INTERVAL = 60;	// 60 sec
+	
+	private static final Logger log = Logger.getLogger(WtpMsgHandlerUtils.class);
+	private static final Logger logOnlineStatus = Logger.getLogger(MsgLogger.class);
+	private static final Logger logWtpMsg = Logger.getLogger(WtpMsgLogger.class);
+	
+	private static AtomicInteger onlineStatusCount = new AtomicInteger();	
+	private static int last_ac_reg_list_updatetime = 0;
+	private static int last_ac_status_updatetime = 0;
+	 
+	
+	private class MsgLogger {
+		/* A required dummy certain log to specific log files */
+	}
+	
+	private class WtpMsgLogger {
+		/* Other msg logger for debug */
+	}
+	
+	/* log message to msg log */
+	public static void logOnlineStatusMessage(QueryInfo<Object> info) {
+		/* messages that are no need to handle */
+		switch (info.getType())
+		{
+		case PIPE_INFO_TYPE_DEV_ONLINE:
+		case PIPE_INFO_TYPE_DEV_OFFLINE:
+			int value = onlineStatusCount.incrementAndGet();
+//			log.infof("%d %s", value, info);
+			logOnlineStatus.infof("%d %s", value, info);
+			return;		
+		case PIPE_INFO_AC_REG_LIST:
+			logWtpMsg.infof("INFO AC_REG_LIST=%s", info);
+			return;
+		default:
+			return;
+		}
+	}	
+
+	public static boolean checkOnlineObject(QueryInfo<Object> info, DevOnlineObject devOnlineO) {
+		switch(info.getType()) {
+		case PIPE_INFO_AC_REG_LIST:
+		case PIPE_INFO_TYPE_AC_STATUS:
+		case PIPE_INFO_AC_INFO_UPDATE: // skip ---> for wtp_ip update
+		case PIPE_INFO_AC_LICENSE:
+			return true; // there is no devOnlineO for these messages and just return
+
+		case PIPE_INFO_TYPE_DEV_ONLINE:
+		case PIPE_INFO_TYPE_DEV_OFFLINE://dont move
+		case PIPE_INFO_TYPE_CONFIG_GET:
+		case PIPE_INFO_TYPE_CONFIG_GET_TEXT:
+		case PIPE_INFO_TYPE_CONFIG_PUT:		/* clear config */
+		case PIPE_INFO_TYPE_CONFIG_PUT_TEXT:	/* clear config */
+		case PIPE_INFO_TYPE_EVENT_ACT_FH_LIC:	/* FH special handling */
+			return true;	// devOnlineO can be null for these messages and skip checking
+			
+		case PIPE_INFO_TYPE_CONFIG_BACKUP:
+		case PIPE_INFO_TYPE_CONFIG_BACKUP_TEXT:
+		case PIPE_INFO_TYPE_CONFIG_MD5:
+		case PIPE_INFO_TYPE_CONFIG_CHECKSUM:
+		case PIPE_INFO_TYPE_WAN_IP_INFO:
+		case PIPE_INFO_TYPE_FIRMWARE_PUT:
+		case PIPE_INFO_TYPE_DEV_DETAIL:
+		case PIPE_INFO_TYPE_DEV_BANDWIDTH:
+		case PIPE_INFO_TYPE_STATION_BANDWIDTH_LIST:
+		case PIPE_INFO_TYPE_DEV_USAGE_HIST:
+		case PIPE_INFO_TYPE_STATION_USAGE_HIST:
+		case PIPE_INFO_TYPE_DEV_CHANNEL_UTIL:
+		case PIPE_INFO_TYPE_PEPVPN_ENDPOINT:
+		case PIPE_INFO_TYPE_PEPVPN_PEER_LIST:/* *** add for PepvpnEndpointV2 *** */
+		case PIPE_INFO_TYPE_PEPVPN_PEER_DETAIL:
+		case PIPE_INFO_TYPE_PEPVPN_PEER_UPDATE:
+		case PIPE_INFO_TYPE_PEPVPN_TUNNEL_STAT:
+		case PIPE_INFO_TYPE_FEATURE_GET:
+		case PIPE_INFO_TYPE_CONFIG_UPDATE_AUTO_CHANNEL:
+		case PIPE_INFO_TYPE_DEV_SYSINFO:
+		case PIPE_INFO_TYPE_WEB_ADMIN_TUNNEL:
+		case PIPE_INFO_TYPE_WEB_TUNNELING:
+		case PIPE_INFO_TYPE_SSID_DISCOVERY:
+		case PIPE_INFO_TYPE_DIAG_REPORT_PLB:	
+		case PIPE_INFO_TYPE_PORTAL:
+			if(devOnlineO == null) {
+				if (log.isDebugEnabled())
+					log.debug("invalid if there is no DevOnlineObject");				
+				break; 
+			}
+			else if(!devOnlineO.isOnline()) {
+				if (log.isDebugEnabled())
+					log.debug("invalid if isOnline is false");
+				break;
+			}
+			else
+				return true;
+			
+		/* if invalid, then just exit to prevent lots of OP_MODE_PUT during server restart or when queue length is large */
+		case PIPE_INFO_TYPE_EVENT_LOG:
+		case PIPE_INFO_TYPE_DEV_LOCATIONS:
+		case PIPE_INFO_TYPE_STATION_LIST:
+		case PIPE_INFO_TYPE_DEV_USAGE_CONSOLIDATE:
+		case PIPE_INFO_TYPE_STATION_USAGE:
+		case PIPE_INFO_TYPE_DEV_SSID_USAGES:
+		case PIPE_INFO_TYPE_STATION_LIST_DELTA:
+		case PIPE_INFO_TYPE_NDPI:
+			if(devOnlineO == null) {
+				break; // invalid if there is no DevOnlineObject
+			}
+			else if(!devOnlineO.isOnline()) {
+				break; // invalid if isOnline is false
+			}
+			else
+				return true;
+	
+		case PIPE_INFO_TYPE_DEV_USAGE:
+			if(devOnlineO != null && devOnlineO.isOnline()) {
+				return true;
+			}
+			boolean isSuppressReport = false;
+			
+			/* Set proper op_mode in DEV_USAGE to reduce server load */
+			if (BranchUtils.isLoaded())
+			{
+				SnsOrganizations snsOrg = BranchUtils.getSnsOrganizationsByIanaIdSn(info.getIana_id(), info.getSn());
+				if (snsOrg==null) {
+					log.warnf("NOT YET REGISTERED, suppressed (sid=%s, iana=%d, sn=%s, type=%s)", info.getSid(), info.getIana_id(), info.getSn(), info.getType());
+					isSuppressReport = true;
+				}
+				else {
+					Devices dev = NetUtils.getDevices(snsOrg.getOrganizationId(), info.getIana_id(), info.getSn());
+					if (dev!=null) {
+						if (ONLINE_STATUS.statusOf(dev.getOnline_status())==ONLINE_STATUS.WARRANTY_EXPIRED)
+						{
+							log.warnf("WARRANTY_EXPIRED, suppressed (sid=%s, iana=%d, sn=%s, type=%s)", info.getSid(), info.getIana_id(), info.getSn(), info.getType());
+							isSuppressReport = true;
+						}
+					}
+				}
+				
+				if (isSuppressReport)	// suppress sending of messages from devices
+				{
+					ACService.set_dev_op_mode(JsonUtils.genServerRef(), info.getIana_id(), info.getSn(), OP_MODE.OPMODE_NOREPORT);
+				}
+			}
+			break;
+			
+		default:
+			break;
+		}
+		return false; // default is invalid and return
+	}
+	
+	
+	/* filter unnecessary message from AC */
+	public static boolean isMessageRequireFilter(QueryInfo<Object> info) {
+		/* messages that are no need to handle */
+		switch (info.getType())
+		{
+		case PIPE_INFO_TYPE_OP_MODE_PUT:
+		case PIPE_INFO_TYPE_DUMMY_TEST:
+		case PIPE_INFO_TYPE_STATION_Z:
+		case PIPE_INFO_TYPE_REPORT_INTERVAL:
+		case REPEAT_SN:	
+		case PIPE_INFO_TYPE_REDIRECT_WTP:
+		case PIPE_INFO_TYPE_WAN_IP_INFO:
+		case AC_KICK:
+		case CORE_KICK:
+//		case PIPE_INFO_AC_INFO_UPDATE: //for wtp_ip update
+			return true;
+		default:
+			return false;
+		}
+	}
+	
+	/* filter unnecessary message from AC */
+	public static boolean isMessageRequireSkip(QueryInfo<Object> info) {		
+		/* SKIP message if more than specific number of concurrent requests */
+		MessageType mt = info.getType();
+		
+		/* SKIP message if more than specific number of concurrent requests */
+		if (WtpMsgHandler.getCounter()> WtpMsgHandler.MAX_CONCURRENT_MESSAGE)
+		{
+			/* some less frequent but critical messages should not skip even max concurrent message is reached */
+			switch (mt) 
+			{
+			case PIPE_INFO_AC_REG_LIST:
+				if (DateUtils.getUnixtime() - last_ac_reg_list_updatetime < MIN_REG_INTERVAL)
+				{
+					log.infof("skipped queued ac_reg_list");
+					return true;
+				}
+				last_ac_reg_list_updatetime = DateUtils.getUnixtime();
+				break;
+			case PIPE_INFO_AC_LICENSE:
+				if (DateUtils.getUnixtime() - info.getTimestamp() > MIN_LICENSE_INTERVAL)
+				{
+					log.warnf("skipped outdated ac_license - "+info);
+					return true;
+				}				
+				break;
+			case PIPE_INFO_TYPE_DEV_ONLINE:
+				try {
+					Devices devices = null;
+					SnsOrganizations snsOrg = null;
+					Networks networks = null;
+					
+					if (!BranchUtils.isLoaded())
+					{
+						log.warnf("BranchUtils is not loaded, skip DEV_ONLINE %d %s", info.getIana_id(), info.getSn());
+						return true;
+					}
+					
+					snsOrg = BranchUtils.getSnsOrganizationsByIanaIdSn(info.getIana_id(), info.getSn());
+					if (snsOrg!=null){
+						devices = NetUtils.getDevices(snsOrg.getOrganizationId(), info.getIana_id(), info.getSn());
+						if (devices == null || devices.getNetworkId() == 0){
+							log.debugf("dev %d %s is not found in NetUtils", info.getIana_id(), info.getSn());
+							return true;
+						}
+						
+						if (!devices.isActive())
+						{
+							log.debugf("dev %d %s is inactive", info.getIana_id(), info.getSn());
+							return true;
+						}
+					
+						networks = OrgInfoUtils.getNetwork(snsOrg.getOrganizationId(), devices.getNetworkId());
+						if (networks == null){
+							log.warnf("dev %d %s network %d is not found in OrgInfoUtils", info.getIana_id(), info.getSn(), devices.getNetworkId());
+							return true;
+						}				
+					}
+					else
+						return true;
+				} catch (Exception e) {
+					log.error("isMessageRequireSkip PIPE_INFO_TYPE_DEV_ONLINE ", e);
+				} finally {
+					//currentOnlineEventCounter.decrementAndGet();
+				}
+				break;
+				
+			default:
+				log.errorf("Bypassing message [ianaId:%d sn:%s type:%s] when concurrent messages limit exceeds (%d/%d)", info.getIana_id(), info.getSn(), info.getType(), WtpMsgHandler.getCounter(), WtpMsgHandler.MAX_CONCURRENT_MESSAGE);
+				return true;
+			} 
+			return false; // will continue processing
+		}
+		
+		/* messages that are no need to handle */
+		switch (mt)
+		{
+//		case PIPE_INFO_TYPE_CONFIG_BACKUP:
+//		case PIPE_INFO_TYPE_CONFIG_BACKUP_TEXT:
+//		case PIPE_INFO_TYPE_CONFIG_MD5:
+//		case PIPE_INFO_TYPE_CONFIG_CHECKSUM:
+//		case PIPE_INFO_TYPE_CONFIG_UPDATE_AUTO_CHANNEL:
+//		case PIPE_INFO_TYPE_FIRMWARE_PUT:
+//		case PIPE_INFO_TYPE_FEATURE_GET:
+		case PIPE_INFO_TYPE_STATION_USAGE:
+		case PIPE_INFO_TYPE_WAN_IP_INFO:
+		case PIPE_INFO_TYPE_DEV_DETAIL:
+		case PIPE_INFO_TYPE_STATION_BANDWIDTH_LIST:
+		case PIPE_INFO_TYPE_DEV_USAGE_HIST:
+		case PIPE_INFO_TYPE_STATION_USAGE_HIST:
+		case PIPE_INFO_TYPE_DEV_CHANNEL_UTIL:
+//		case PIPE_INFO_TYPE_PEPVPN_ENDPOINT:
+		case PIPE_INFO_TYPE_DEV_SYSINFO:
+		case PIPE_INFO_TYPE_WEB_ADMIN_TUNNEL:
+		case PIPE_INFO_TYPE_WEB_TUNNELING:
+		case PIPE_INFO_TYPE_SSID_DISCOVERY:
+		case PIPE_INFO_TYPE_PORTAL:
+			/* skip when unhealthy */
+			//if(!HealthMonitorHandler.isSystemHealthy())
+				//return true;
+			break;
+			
+		case PIPE_INFO_TYPE_DEV_LOCATIONS:
+			/* skip when unhealthy */
+//			if(!HealthMonitorHandler.isSystemHealthy())
+//				return true;
+			
+			/* skip real time requests */
+			if (isRealtimeResponseMessage(info)) {
+				try {
+					DevLocationsObject devLocO = new DevLocationsObject();
+					devLocO.setIana_id(info.getIana_id());
+					devLocO.setSn(info.getSn());
+					devLocO = ACUtil.getPoolObjectBySn(devLocO, DevLocationsObject.class);
+					if (devLocO!=null && devLocO.getCreateTime()!=null && DateUtils.getUtcDate().getTime() - devLocO.getCreateTime() < MIN_DEVLOC_INTERVAL)
+					{				
+//						log.debugf("DevLocationsObject skip curtime = %d, createtime = %d, sn=%s", DateUtils.getUtcDate().getTime(), devLocO.getCreateTime(), info.getSn());
+						return true;
+					}
+				} catch (InstantiationException | IllegalAccessException e) {
+					log.warnf("fail to get DevLocationsObject, sn=%s", info.getSn());
+					return true;
+				}
+			}
+			break; 
+			
+		case PIPE_INFO_TYPE_DEV_BANDWIDTH:
+			/* skip when unhealthy */
+//			if(!HealthMonitorHandler.isSystemHealthy())
+//				return true;
+
+			if (info.getStatus()==200) {
+				try {
+					DevBandwidthObject devBandwidthObject = new DevBandwidthObject();					
+					devBandwidthObject.setSn(info.getSn());
+					devBandwidthObject.setIana_id(info.getIana_id());				
+					DevBandwidthObject devBandO = ACUtil.<DevBandwidthObject>getPoolObjectBySn(devBandwidthObject, DevBandwidthObject.class);
+					if (devBandO!=null && devBandO.getCreateTime()!=null && DateUtils.getUtcDate().getTime() - devBandO.getCreateTime() < MIN_DEVBW_INTERVAL)
+					{					
+						log.debugf("DevBandwidthObject skip curtime = %d, createtime = %d, sn=%s", DateUtils.getUtcDate().getTime(), devBandO.getCreateTime(), info.getSn());
+						return true;
+					}
+				} catch (InstantiationException | IllegalAccessException e) {
+					log.warn("fail to get DevBandwidthObject");
+					return true;
+				}
+			}
+			break;
+
+		case PIPE_INFO_TYPE_AC_STATUS:
+			if (DateUtils.getUnixtime() - last_ac_status_updatetime < MIN_AC_INTERVAL)
+			{
+				log.infof("skipped queued ac_status");
+				return true;
+			}
+			last_ac_status_updatetime = DateUtils.getUnixtime();
+			break;
+			
+		default:
+			break;
+		}
+
+		return false;
+	}
+	
+	public static boolean isRealtimeResponseMessage(QueryInfo<Object> info)
+	{
+		if (info.getSid()!=null && !info.getSid().isEmpty())
+			return true;
+		else
+			return false;
+	}
+}

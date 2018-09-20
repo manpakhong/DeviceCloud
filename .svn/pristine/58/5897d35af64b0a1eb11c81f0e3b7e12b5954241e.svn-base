@@ -1,0 +1,209 @@
+package com.littlecloud.pool.object.utils;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import org.jboss.logging.Logger;
+
+import net.sf.json.JSONObject;
+
+import com.google.gson.Gson;
+import com.littlecloud.ac.WtpMsgHandler;
+import com.littlecloud.ac.WtpMsgHandlerUtils;
+import com.littlecloud.ac.json.model.command.QueryInfo;
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.webservices.util.NetworkUtils;
+import com.littlecloud.pool.control.QueueControl;
+import com.littlecloud.pool.object.DevLocationsObject;
+import com.littlecloud.pool.object.DevLocationsReportObject;
+import com.littlecloud.pool.object.DevOnlineObject;
+import com.littlecloud.pool.object.LocationList;
+import com.littlecloud.pool.object.SimpleDevLocationsObject;
+import com.littlecloud.pool.object.SimpleLocationList;
+import com.littlecloud.pool.utils.ComparatorLocationList;
+
+public class LocationUtils 
+{
+	private static Logger log = Logger.getLogger(LocationUtils.class);
+	
+	public static boolean cacheLocationList(String json,QueryInfo<Object> info)
+	{
+		try
+		{
+			Gson gson = new Gson();
+			JSONObject object = JSONObject.fromObject(info);
+			JSONObject data = object.getJSONObject(WtpMsgHandler.DATA_TAG);
+
+			Date curTime = new Date();
+			boolean listTooLong = false;
+			
+			DevLocationsObject devLoc = null;
+			
+			log.info("version of dev loc " + data.getInt("version") );
+			
+			if( data.getInt("version") >= 4 )//TODO
+			{
+				SimpleDevLocationsObject simpleDevLoc = gson.fromJson(data.toString(), SimpleDevLocationsObject.class);
+				if(simpleDevLoc != null)
+				{
+					devLoc = new DevLocationsObject();
+					ArrayList<LocationList> locationLst = new ArrayList<LocationList>();
+					
+					log.info("Version 4 is existing!");
+					ArrayList<SimpleLocationList> locLst = simpleDevLoc.getLocation_list();
+					for(SimpleLocationList location : locLst)
+					{
+						if( location.getTimestamp() == null )
+							continue;
+						
+						LocationList item = new LocationList();
+						item.setAltitude(location.getAt());
+						item.setH_dop(location.getHd());
+						item.setH_uncertain(location.getHu());
+						item.setLatitude(location.getLa());
+						item.setLongitude(location.getLo());
+						item.setSpeed(location.getSp());
+						item.setStatus(location.getSt());
+						item.setTimestamp(location.getTimestamp());
+						item.setV_uncertain(location.getVu());
+						locationLst.add(item);
+					}
+					CopyOnWriteArrayList<LocationList> addLocations = new CopyOnWriteArrayList<LocationList>();
+					addLocations.addAll(locationLst);
+					devLoc.setLocation_list(addLocations);
+					devLoc.setVersion(simpleDevLoc.getVersion());
+					log.info("Version 4 converted to others!");
+				}
+			}
+			else
+			{
+				devLoc = gson.fromJson(data.toString(), DevLocationsObject.class);
+				CopyOnWriteArrayList<LocationList> locations = devLoc.getLocation_list();
+				
+				if(devLoc.getVersion() == 3)
+				{
+					if( locations != null && !locations.isEmpty() )
+					{
+						if( locations.get(0).getStatus() == null )
+						{
+							log.warn("Json format error");
+							return true;
+						}
+					}
+				}
+				
+				ArrayList<LocationList> newLocations = new ArrayList<LocationList>();
+				for(LocationList loc : locations)
+				{
+					if( loc.getTimestamp() != null && (new Date().getTime() - loc.getTimestamp() * 1000) >= 0)
+						newLocations.add(loc);
+				}
+				CopyOnWriteArrayList<LocationList> addLocations = new CopyOnWriteArrayList<LocationList>();
+				addLocations.addAll(newLocations);
+				devLoc.setLocation_list(addLocations);
+			}
+			
+			if (devLoc == null) {
+				log.warn("device location object is null for " + info.getSn() + " status: " + info.getStatus());
+				return false;
+			}
+
+			if (devLoc.getVersion() == null || devLoc.getVersion() < 2) {
+				log.warn("Device Location with older version is submitted: version = " + devLoc.getVersion());
+				return false;
+			}
+
+			if (devLoc.getLocation_list() == null) {
+				log.warn("device location list from Json is null for " + info.getSn() + " status: " + info.getStatus());
+				return false;
+			}
+
+			devLoc.setSid(info.getSid());
+			devLoc.setSn(info.getSn());
+			devLoc.setIana_id(info.getIana_id());
+			
+			DevLocationsObject devLocFromCache = ACUtil.getPoolObjectBySn(devLoc, DevLocationsObject.class);
+			if (devLocFromCache == null) {
+				devLocFromCache = new DevLocationsObject();
+				devLocFromCache.setSid(info.getSid());
+				devLocFromCache.setSn(info.getSn());
+				devLocFromCache.setIana_id(info.getIana_id());
+				devLocFromCache.setLocation_list(new CopyOnWriteArrayList<LocationList>());
+			}
+			List<LocationList> locListFromCache = devLocFromCache.getLocation_list();
+			List<LocationList> locList = devLoc.getLocation_list();
+			if (locList != null && !locList.isEmpty()) {
+				LocationList lastLocation = devLocFromCache.getLast_query_location();
+				boolean bSkipToAdd = false;
+				for (LocationList locItem : locList) {
+					
+					if(locItem.getTimestamp() == null)
+						continue;
+					
+					if (locItem.getStatus() != 0) {
+						if (lastLocation != null) {
+							if (lastLocation.getLatitude() != null && lastLocation.getLongitude() != null) {
+								locItem.setTimestamp(lastLocation.getTimestamp() + 1);
+								locItem.setLatitude(null);
+								locItem.setLongitude(null);
+							} else {
+								// previous point is also invalid, skip to add to cache
+								bSkipToAdd = true;
+							}
+						} else {
+							// never has a success point, skip this point
+							continue;
+						}
+					}
+
+					if (locListFromCache.contains(locItem)) {
+						bSkipToAdd = true;
+					}
+
+					if (!bSkipToAdd) {
+						if (lastLocation != null) {
+							if (locItem.getTimestamp().intValue() - lastLocation.getTimestamp().intValue() > 10) {
+								// last query data received is five seconds ago
+								LocationList nullToInsert = new LocationList();
+								nullToInsert.setTimestamp(lastLocation.getTimestamp().longValue() + 1);
+								nullToInsert.setLatitude(null);
+								nullToInsert.setLongitude(null);
+								locListFromCache.add(nullToInsert);
+								log.debug("nullToInsert = " + nullToInsert);
+							}
+						}
+						locListFromCache.add(locItem);
+						lastLocation = locItem;
+					}
+				}
+
+				while (locListFromCache.size() >= 120) {
+					// keep last 120 data, don't care the timestamp
+					locListFromCache.remove(0);
+				}
+
+				ComparatorLocationList compareLocList = new ComparatorLocationList();
+				Collections.sort(new ArrayList<LocationList>(locListFromCache), compareLocList);
+
+				devLocFromCache.setLast_query_location(lastLocation);
+				devLocFromCache.setLocation_list(new CopyOnWriteArrayList<LocationList>(locListFromCache));
+			}
+
+			ACUtil.cachePoolObjectBySn(devLocFromCache, DevLocationsObject.class);
+		}
+		catch(Exception e)
+		{
+			StringWriter sw = new StringWriter();
+		    e.printStackTrace(new PrintWriter(sw));		
+			log.errorf("Exception on handler DEV_LOCATIONS - %s\n%s", json, sw);
+			return false;
+		}
+		
+		return true;
+	}
+}

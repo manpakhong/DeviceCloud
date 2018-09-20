@@ -1,0 +1,146 @@
+package com.littlecloud.control.entity;
+
+import static javax.persistence.GenerationType.IDENTITY;
+
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.Table;
+
+import com.peplink.api.db.DBObject;
+
+@Entity
+@Table(name = "captive_portal_contents")
+public class CaptivePortalContent extends DBObject {
+	public static enum CONTENT_TYPE {
+		MESSAGE,
+		TERMS,
+		LOGIN_SUCCESS,
+		LOGOUT_MESSAGE,
+		LANGUAGE,
+		TEXT_USERNAME,
+		TEXT_PASSWORD,
+		TEXT_FOOTER,
+		TEXT_ACCESS_TOKEN,
+		TEXT_CONTINUE_BROWSING,
+		BTN_AGREE,
+		BTN_LOGIN,
+		BTN_LOGOUT,
+		TEXT_FORGOT_PWD,
+		TEXT_VIEW_TNC,
+		MSG_INVALID_USERNAME_PASSWORD,
+		MSG_INVALID_TOKEN,
+		MSG_INVALID_USER_TIME_QUOTA_EXCEED_LIMIT,
+		MSG_INVALID_USER_BANDWIDTH_QUOTA_EXCEED_LIMIT,
+		MSG_INVALID_USER_ACCOUNT_EXPIRED,
+		MSG_INVALID_CONCURRENT_ACCESS_EXCEED_LIMIT,
+		MSG_UNKNOWN_ERROR,
+		MSG_NO_PROFILE,
+		TEXT_GRANTED_ACCESS,
+		TEXT_FREE_ACCESS,
+		TEXT_HOUR,
+		TEXT_MINUTE,
+		MSG_TITLE,
+		TEXT_HOURS,
+		TEXT_MINUTES,
+		BTN_FB_LIKE,
+		BTN_FB_SHARE,
+		BTN_FB_CHECKIN,
+		BTN_FB_WIFI,
+		TAB_OPEN_ACCESS,
+		TAB_GUEST,
+		TAB_TOKEN,
+		TAB_FB_LIKE,
+		TAB_FB_CHECKIN,
+		TAB_FB_SHARE,
+		TAB_FB_WIFI,
+		BTN_WECHAT_ACCESS,
+		TAB_WECHAT_FOLLOW,
+		TAB_GOOGLE_AUTH,
+		TAB_TWITTER_FOLLOW,
+		BTN_TWITTER_FOLLOW,
+		TAB_LINKEDIN_FOLLOW,
+		BTN_LINKEDIN_FOLLOW,
+		TAB_WEIBO_FOLLOW,
+		BTN_WEIBO_FOLLOW,
+		BTN_INSTAGRAM_FOLLOW,
+		TAB_INSTAGRAM_FOLLOW,
+		BTN_LAUNCH_WECHAT,
+		MSG_INVALID_LOGIN_SESSION
+		}
+	
+	int id;
+	int cpId;
+	String type;
+	String lang;
+	String content;
+
+	public CaptivePortalContent() {
+		super();
+	}
+
+	@Id
+	@GeneratedValue(strategy = IDENTITY)
+	@Column(name = "id", unique = true, nullable = false)
+	public int getId() {
+		return id;
+	}
+
+	public void setId(int id) {
+		this.id = id;
+	}
+
+	@Column(name = "cp_id", nullable = false)
+	public int getCpId() {
+		return cpId;
+	}
+
+	public void setCpId(int cpId) {
+		this.cpId = cpId;
+	}
+
+	@Column(name = "content_type")
+	public String getContentType() {
+		return type;
+	}
+
+	public void setContentType(String type) {
+		this.type = type;
+	}
+
+	@Column(name = "lang")
+	public String getLang() {
+		return lang;
+	}
+
+	public void setLang(String lang) {
+		this.lang = lang;
+	}
+
+	@Column(name = "content")
+	public String getContent() {
+		return content;
+	}
+
+	public void setContent(String content) {
+		this.content = content;
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append("CaptivePortalContent [id=");
+		builder.append(id);
+		builder.append(", cpId=");
+		builder.append(cpId);
+		builder.append(", type=");
+		builder.append(type);
+		builder.append(", lang=");
+		builder.append(lang);
+		builder.append(", content=");
+		builder.append(content);
+		builder.append("]");
+		return builder.toString();
+	}
+}

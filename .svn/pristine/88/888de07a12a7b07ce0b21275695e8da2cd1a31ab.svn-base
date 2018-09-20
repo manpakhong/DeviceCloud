@@ -1,0 +1,134 @@
+package com.littlecloud.services;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+import java.util.TimeZone;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.DailyDeviceSsidUsagesDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.report.DailyDeviceSsidUsages;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.pool.model.DailyDevSsidUsageResult;
+import com.littlecloud.utils.CalendarUtils;
+import com.littlecloud.utils.CommonUtils;
+
+public class DeviceSsidDailyUsagesMgr {
+	private static final Logger log = Logger.getLogger(DeviceSsidDailyUsagesMgr.class);
+	private String orgId;
+	private DailyDeviceSsidUsagesDAO deviceSsidDailyUsagesDao = null;
+	public DeviceSsidDailyUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	private void init(){
+		try{
+			deviceSsidDailyUsagesDao = new DailyDeviceSsidUsagesDAO(this.orgId);
+		}catch (Exception e){
+			log.error("DeviceSsidDailyUsagesmgr.init() - Exception: ", e);
+		}
+	}
+	public int doDeviceSsidDailyUsagesConsolidation(Calendar calFrom, Calendar calTo){
+		int noOfRecordsDone = 0;
+		try{
+			noOfRecordsDone = doDeviceSsidDailyUsagesConsolidation(calFrom, calTo, null);
+		} catch (Exception e){
+			log.error("DeviceSsidDailyUsagesMgr.doDeviceDailyUsagesConsolidation() - Exception: ", e);
+		}
+		return noOfRecordsDone;
+	}
+	public int doDeviceSsidDailyUsagesConsolidation(Calendar calFrom, Calendar calTo, List<Networks> networkList){
+		int noOfRecordsDone = 0;
+		try{
+			if( networkList == null ){
+				NetworksDAO networksDao = new NetworksDAO(orgId, true); 
+				networkList = networksDao.getAllNetworks();
+			}
+			for (Networks network : networkList){
+				if(log.isInfoEnabled()){
+					log.infof("DeviceSsidDailyUsagesMgr.doDeviceDailyUsagesConsolidation - working on: orgId = %s, netId = %d", orgId, network.getId());
+				}
+				if( network != null ){
+					String timezone = network.getTimezone();
+					String timezoneId = DateUtils.getTimezoneFromId(Integer.valueOf(timezone));
+					TimeZone tz = TimeZone.getTimeZone(timezoneId);										
+					
+					Calendar calFromLocal = CalendarUtils.convertCalendar2TimeZoneCalendar(calFrom, tz);
+					Calendar calToLocal = CalendarUtils.convertCalendar2TimeZoneCalendar(calTo, tz);
+					DeviceSsidUsagesMgr deviceSsidUsagesMgr = new DeviceSsidUsagesMgr(orgId);
+					List<DailyDeviceSsidUsages> devResultList = deviceSsidUsagesMgr.getEssidEncryptionTotalTxRxWithTimePeriod(network.getId(), calFromLocal, calToLocal);
+					if(devResultList != null && devResultList.size() > 0){
+						List<DailyDeviceSsidUsages> dailyDeviceSsidUsageList = new ArrayList<DailyDeviceSsidUsages>();
+						for (DailyDeviceSsidUsages devSsidDailyUsageResult:devResultList){
+							Integer networkId = devSsidDailyUsageResult.getNetworkId();
+							Integer deviceId = devSsidDailyUsageResult.getDeviceId();
+							String essid = devSsidDailyUsageResult.getEssid();
+							String encryption = devSsidDailyUsageResult.getEncryption();
+							if (networkId != null && deviceId != null && essid != null && encryption != null){
+								DailyDeviceSsidUsages deviceSsidDailyUsages = 
+										findByNetworkIdDeviceIdEssidEncryptionDateRange(networkId, deviceId, essid, encryption, calFromLocal, calToLocal);
+								if (deviceSsidDailyUsages == null){
+									deviceSsidDailyUsages = new DailyDeviceSsidUsages();
+									deviceSsidDailyUsages.setNetworkId(networkId);
+									deviceSsidDailyUsages.setDeviceId(deviceId);
+									deviceSsidDailyUsages.setDatetime(calFromLocal.getTime());
+									deviceSsidDailyUsages.setEssid(essid);
+									deviceSsidDailyUsages.setEncryption(encryption);
+									deviceSsidDailyUsages.setTx(CommonUtils.safeDoubleToFloat(devSsidDailyUsageResult.getTx()));
+									deviceSsidDailyUsages.setRx(CommonUtils.safeDoubleToFloat(devSsidDailyUsageResult.getRx()));
+									deviceSsidDailyUsages.setUnixtime(CalendarUtils.changeDate2Unixtime(calFromLocal.getTime()));
+									deviceSsidDailyUsages.create();
+								}
+								else {
+									deviceSsidDailyUsages.setTx(CommonUtils.safeDoubleToFloat(devSsidDailyUsageResult.getTx()));
+									deviceSsidDailyUsages.setRx(CommonUtils.safeDoubleToFloat(devSsidDailyUsageResult.getRx()));
+									deviceSsidDailyUsages.saveOrUpdate();
+								}
+								dailyDeviceSsidUsageList.add(deviceSsidDailyUsages);
+							} else {
+								log.warnf("DeviceSsidDailyUsagesMgr.doDeviceDailyUsagesConsolidation(), networkId or deviceId or essid or encryption is/are null. (%s, %s, %s, %s)", 
+										networkId, deviceId, essid, encryption);	
+							}
+						} // end for (DailyDevSsidUsageResult devSsidDailyUsageResult:devResultList)
+						if (dailyDeviceSsidUsageList != null && dailyDeviceSsidUsageList.size() > 0){
+							boolean areSaved = saveDeviceSsidDailyUsagesList(dailyDeviceSsidUsageList);
+							noOfRecordsDone = dailyDeviceSsidUsageList.size();
+							if (!areSaved){
+								log.warnf("DeviceSsidDailyUsagesMgr.doDeviceDailyUsagesConsolidation()");
+							}
+						}
+						
+					} // end if(devResultList != null && devResultList.size() > 0)
+				} // end if( network != null )
+			} // end for (Networks network : networkList)
+		}
+		catch (Exception e) {
+			log.error("startProcessDailySsidUsages Error in accessing report consolidate job table 38- " + orgId,e);				
+		}
+		return noOfRecordsDone;
+	}
+	
+	public DailyDeviceSsidUsages findByNetworkIdDeviceIdEssidEncryptionDateRange(Integer networkId, Integer deviceId, String essid, String encryption, Calendar calFrom, Calendar calTo){
+		DailyDeviceSsidUsages deviceSsidDailyUsages = null;
+		try{
+			deviceSsidDailyUsages = deviceSsidDailyUsagesDao.findByNetworkIdDeviceIdEssidEncryptionDateRange(networkId, deviceId, essid, encryption, calFrom, calTo);		
+		} catch (Exception e){
+			log.error("DeviceSsidUsagesMgr.findByDeviceIdEssidEncryptionDateRange()",e);
+		}
+		
+		return deviceSsidDailyUsages;
+	}
+	public boolean saveDeviceSsidDailyUsagesList(List<DailyDeviceSsidUsages> deviceSsidDailyUsageList) throws SQLException{
+		boolean isSaved = false;
+		try{
+			isSaved = deviceSsidDailyUsagesDao.saveDeviceSsidDailyUsagesList(deviceSsidDailyUsageList);
+		} catch (Exception e){
+			log.error("DeviceSsidDailyUsagesMgr.saveDeviceSsidDailyUsagesList() - Exception: ", e);
+		}
+		return isSaved;
+	}
+}

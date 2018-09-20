@@ -1,0 +1,641 @@
+package com.littlecloud.pool.object.utils;
+
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.dao.CaptivePortalActivitiesDAO;
+import com.littlecloud.control.dao.CaptivePortalSessionsDAO;
+import com.littlecloud.control.dao.ConfigurationSsidsDAO;
+import com.littlecloud.control.dao.criteria.CaptivePortalSessionsCriteria;
+import com.littlecloud.control.dao.criteria.ConfigurationSsidsCriteria;
+import com.littlecloud.control.entity.CaptivePortalActivity;
+import com.littlecloud.control.entity.CaptivePortalSessions;
+import com.littlecloud.control.entity.ConfigurationSsids;
+import com.littlecloud.control.entity.ConfigurationSsidsId;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.json.request.JsonCaptivePortalRequest;
+import com.littlecloud.pool.object.CpSessionInfoObject;
+import com.littlecloud.pool.object.StopRequeryCpSessionInfoObject;
+import com.littlecloud.pool.object.utils.criteria.CpSessionInfoObjectCriteria;
+import com.littlecloud.utils.CommonUtils;
+
+public class CaptivePortalUtils {
+	private static final Logger logger = Logger.getLogger(CaptivePortalUtils.class);
+	private static final String CONFIG_SSID_PORTAL_ENABLED_PATTERN = "\\\"portal_enabled\\\"\\s{0,5}:\\s{0,5}(true|false||null|0|1)";
+	public static CpSessionInfoObject convert2CpSessionInfoObject(CaptivePortalSessions captivePortalSessions, String organizationId){
+		CpSessionInfoObject cpSessionInfoObject = null;
+		if (captivePortalSessions != null){
+			if (captivePortalSessions.getIanaId() != null &&
+				captivePortalSessions.getClientMac() != null && 
+				captivePortalSessions.getSsid() != null && 
+				organizationId != null && 
+				captivePortalSessions.getNetworkId() != null){
+					
+				cpSessionInfoObject = new CpSessionInfoObject(captivePortalSessions.getIanaId(),captivePortalSessions.getClientMac(), captivePortalSessions.getSsid(), organizationId, captivePortalSessions.getNetworkId());
+
+				// not from database
+//				cpSessionInfoObject.setCp_id(captivePortalSessions.getCpId());
+//				pSessionInfoObject.setLast_access_time(captivePortalSessions.getLastAccessTime());				
+//				cpSessionInfoObject.setSession_timeout(captivePortalSessions.getSessionTimeout());
+//				cpSessionInfoObject.setStatus(captivePortalSessions.getStatus());
+				
+				cpSessionInfoObject.setBssid(captivePortalSessions.getBssid());
+				cpSessionInfoObject.setClient_ip(captivePortalSessions.getClientIp());
+				cpSessionInfoObject.setClient_mac(captivePortalSessions.getClientMac());
+				if (captivePortalSessions.getClientMac() != null && !captivePortalSessions.getClientMac().isEmpty()){
+					cpSessionInfoObject.setClient_mac(captivePortalSessions.getClientMac().replace(":", "-"));
+				}
+				cpSessionInfoObject.setCreated_at(captivePortalSessions.getCreatedAt());
+				cpSessionInfoObject.setExpiry_date(captivePortalSessions.getExpiryDate());
+				cpSessionInfoObject.setIana_id(captivePortalSessions.getIanaId());
+				cpSessionInfoObject.setNetwork_id(captivePortalSessions.getNetworkId());
+				cpSessionInfoObject.setOrganization_id(organizationId);
+				cpSessionInfoObject.setSn(captivePortalSessions.getSn());
+				cpSessionInfoObject.setSsid(captivePortalSessions.getSsid());
+				
+				cpSessionInfoObject.setConnect_time(captivePortalSessions.getConnectTime());
+				cpSessionInfoObject.setCp_id(captivePortalSessions.getCpId());
+				cpSessionInfoObject.setSession_timeout(captivePortalSessions.getSessionTimeOut());
+				cpSessionInfoObject.setLast_access_time(captivePortalSessions.getLastAccessTime());
+				cpSessionInfoObject.setStatus(captivePortalSessions.getStatus());
+				cpSessionInfoObject.setQuota_type(captivePortalSessions.getQuotaType());
+				
+				cpSessionInfoObject.setRemain_bandwidth(captivePortalSessions.getRemainBandwidth());
+				cpSessionInfoObject.setRemain_time(captivePortalSessions.getRemainTime());
+				cpSessionInfoObject.setDisconnect_time(captivePortalSessions.getDisconnectTime());
+				cpSessionInfoObject.setOrganization_id(organizationId);
+				cpSessionInfoObject.setNetwork_id(captivePortalSessions.getNetworkId());
+				cpSessionInfoObject.setSsid_id(captivePortalSessions.getSsidId());
+				cpSessionInfoObject.setDevice_reply_login(captivePortalSessions.getDeviceReplyLogin());
+				cpSessionInfoObject.setLast_house_keep_check_time(captivePortalSessions.getLastHouseKeepCheckTime());
+				cpSessionInfoObject.setUser_group_id(captivePortalSessions.getUserGroupId());
+				cpSessionInfoObject.setUsername(captivePortalSessions.getUsername());
+				
+				cpSessionInfoObject.setAccess_mode(captivePortalSessions.getAccessMode());
+			} else {
+				logger.warnf("CAPORT20140526 - CaptivePortalUtils - convert2CpSessionInfoObject, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s or networkId:%s is/are null!!!", captivePortalSessions.getIanaId(), captivePortalSessions.getClientMac(), captivePortalSessions.getSsid(), organizationId, captivePortalSessions.getNetworkId());
+
+			}
+		}
+		return cpSessionInfoObject;
+	}
+	
+	public static boolean saveCaptivePortalActivity(CaptivePortalActivity captivePortalActivity, String orgId){
+		boolean isSaved = false;
+		try{
+			CaptivePortalActivitiesDAO captivePortalActivitiesDao = new CaptivePortalActivitiesDAO(orgId);
+			captivePortalActivitiesDao.saveOrUpdate(captivePortalActivity);
+			if (captivePortalActivity != null && captivePortalActivity.getId() != null && captivePortalActivity.getId() > 0){
+				isSaved = true;
+			}
+			
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalActivity", e);
+
+		}
+		return isSaved;
+	}
+	
+	public static CpSessionInfoObject convert2CpSessionInfoObject(JsonCaptivePortalRequest jsonCaptivePortalRequest){
+		CpSessionInfoObject cpSessionInfoObject = null;
+		if (jsonCaptivePortalRequest != null){
+			if (jsonCaptivePortalRequest.getIana_id() != null &&
+				jsonCaptivePortalRequest.getClient_mac() != null && 
+				jsonCaptivePortalRequest.getSsid() != null && 
+				jsonCaptivePortalRequest.getOrganization_id() != null && 
+				jsonCaptivePortalRequest.getNetwork_id() != null){
+				
+				cpSessionInfoObject = new CpSessionInfoObject(jsonCaptivePortalRequest.getIana_id(),jsonCaptivePortalRequest.getClient_mac(), jsonCaptivePortalRequest.getSsid(), jsonCaptivePortalRequest.getOrganization_id(), jsonCaptivePortalRequest.getNetwork_id());
+				cpSessionInfoObject.setBssid(jsonCaptivePortalRequest.getBssid());
+				cpSessionInfoObject.setClient_ip(jsonCaptivePortalRequest.getClient_ip());
+				cpSessionInfoObject.setClient_mac(jsonCaptivePortalRequest.getClient_mac());
+				if (jsonCaptivePortalRequest.getClient_mac() != null && !jsonCaptivePortalRequest.getClient_mac().isEmpty()){
+					cpSessionInfoObject.setClient_mac(jsonCaptivePortalRequest.getClient_mac().replace(":", "-"));
+				}
+				cpSessionInfoObject.setCreated_at(jsonCaptivePortalRequest.getCreated_at());
+				cpSessionInfoObject.setExpiry_date(jsonCaptivePortalRequest.getExpiry_date());
+				cpSessionInfoObject.setIana_id(jsonCaptivePortalRequest.getIana_id());
+				cpSessionInfoObject.setNetwork_id(jsonCaptivePortalRequest.getNetwork_id());
+				cpSessionInfoObject.setOrganization_id(jsonCaptivePortalRequest.getOrganization_id());
+				cpSessionInfoObject.setSn(jsonCaptivePortalRequest.getSn());
+				cpSessionInfoObject.setSsid(jsonCaptivePortalRequest.getSsid());
+				cpSessionInfoObject.setLast_access_time(jsonCaptivePortalRequest.getLast_access_time());
+				cpSessionInfoObject.setRemain_bandwidth(jsonCaptivePortalRequest.getRemain_bandwidth());
+				cpSessionInfoObject.setRemain_time(jsonCaptivePortalRequest.getRemain_time());
+				
+				cpSessionInfoObject.setLast_house_keep_check_time(jsonCaptivePortalRequest.getLast_house_keep_check_time());
+				if (cpSessionInfoObject.getStatus() != null){
+					if (cpSessionInfoObject.getStatus().equals(JsonCaptivePortalRequest.STATUS_ACTIVE)){
+						cpSessionInfoObject.setClient_logout(false);
+
+					} else if (cpSessionInfoObject.getStatus().equals(JsonCaptivePortalRequest.STATUS_INACTIVE)){
+						cpSessionInfoObject.setClient_logout(true);
+					}
+				}
+				cpSessionInfoObject.setStatus(jsonCaptivePortalRequest.getStatus());
+				
+				
+				cpSessionInfoObject.setDevice_reply_login(null);
+				
+				
+				
+				cpSessionInfoObject.setDisconnect_time(jsonCaptivePortalRequest.getDisconnect_time());
+				if (jsonCaptivePortalRequest.getStatus() != null){
+					if (jsonCaptivePortalRequest.getStatus().equals(JsonCaptivePortalRequest.STATUS_INACTIVE)){
+						cpSessionInfoObject.setDisconnect_time(new Date());
+					}
+
+				}
+				
+
+				cpSessionInfoObject.setOrganization_id(jsonCaptivePortalRequest.getOrganization_id());
+				cpSessionInfoObject.setNetwork_id(jsonCaptivePortalRequest.getNetwork_id());
+
+				cpSessionInfoObject.setConnect_time(jsonCaptivePortalRequest.getConnect_time());
+				cpSessionInfoObject.setCp_id(jsonCaptivePortalRequest.getCp_id());
+				cpSessionInfoObject.setSession_timeout(jsonCaptivePortalRequest.getSession_timeout());
+				cpSessionInfoObject.setLast_access_time(jsonCaptivePortalRequest.getLast_access_time());
+				cpSessionInfoObject.setStatus(jsonCaptivePortalRequest.getStatus());
+				cpSessionInfoObject.setQuota_type(jsonCaptivePortalRequest.getQuota_type());
+				
+				if (jsonCaptivePortalRequest.getSsid_id() == null || jsonCaptivePortalRequest.getSsid_id() == 0){
+					cpSessionInfoObject.setSsid_id(getSsidId(jsonCaptivePortalRequest));
+				} else {
+					cpSessionInfoObject.setSsid_id(jsonCaptivePortalRequest.getSsid_id());
+				}
+				
+//				cpSessionInfoObject.setSession_timeout(jsonCaptivePortalRequest.getSession_timeout());
+				cpSessionInfoObject.setUser_group_id(jsonCaptivePortalRequest.getUser_group_Id());
+				cpSessionInfoObject.setUsername(jsonCaptivePortalRequest.getUsername());
+				cpSessionInfoObject.setAccess_mode(jsonCaptivePortalRequest.getAccess_mode());
+			} else {
+				logger.warnf("CAPORT20140526 - CaptivePortalUtils - convert2CpSessionInfoObject, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s or networkId:%s is/are null!!!", jsonCaptivePortalRequest.getIana_id(), jsonCaptivePortalRequest.getClient_mac(), jsonCaptivePortalRequest.getSsid(), jsonCaptivePortalRequest.getOrganization_id(), jsonCaptivePortalRequest.getNetwork_id());
+			}
+		}
+		return cpSessionInfoObject;
+	}
+	
+	private static Integer getSsidId(CpSessionInfoObject cpSessionInfoObject){
+		
+		ConfigurationSsidsCriteria confSsidCriteria = new ConfigurationSsidsCriteria();
+		
+		confSsidCriteria.setIanaId(cpSessionInfoObject.getIana_id());
+		confSsidCriteria.setSn(cpSessionInfoObject.getSn());
+		confSsidCriteria.setOrganizationId(cpSessionInfoObject.getOrganization_id());
+		confSsidCriteria.setSsidEnabled(true);
+		confSsidCriteria.setNetworkId(cpSessionInfoObject.getNetwork_id());
+		confSsidCriteria.setSsid(cpSessionInfoObject.getSsid());
+		
+		return getSsidId(confSsidCriteria);
+	}
+	
+	private static Integer getSsidId(JsonCaptivePortalRequest jsonCaptivePortalRequest){
+		ConfigurationSsidsCriteria confSsidCriteria = new ConfigurationSsidsCriteria();
+		
+		confSsidCriteria.setIanaId(jsonCaptivePortalRequest.getIana_id());
+		confSsidCriteria.setSn(jsonCaptivePortalRequest.getSn());
+		confSsidCriteria.setOrganizationId(jsonCaptivePortalRequest.getOrganization_id());
+		confSsidCriteria.setSsidEnabled(true);
+		confSsidCriteria.setNetworkId(jsonCaptivePortalRequest.getNetwork_id());
+		confSsidCriteria.setSsid(jsonCaptivePortalRequest.getSsid());
+		
+		return getSsidId(confSsidCriteria);
+	}
+	
+	public static Integer getSsidId(ConfigurationSsidsCriteria confSsidCriteria){
+		Integer ssidId = null;
+		try{
+			Devices device = NetUtils.getDevices(confSsidCriteria.getOrganizationId(), confSsidCriteria.getIanaId(), confSsidCriteria.getSn());
+			ConfigurationSsidsDAO configurationSsidsDao = new ConfigurationSsidsDAO(confSsidCriteria.getOrganizationId());
+			
+			if (device != null){
+				confSsidCriteria.setDeviceId(device.getId());
+			}
+
+			List<ConfigurationSsids> configurationSsidsList = configurationSsidsDao.getConfigurationSsidsByDeviceLevelThenNetworkLevel(confSsidCriteria);
+			ConfigurationSsids configurationSsids = null;
+
+			if (configurationSsidsList !=  null){
+				if (configurationSsidsList.size() == 1){
+					configurationSsids = configurationSsidsList.get(0);		
+					if (configurationSsids != null){
+						ConfigurationSsidsId confId = configurationSsids.getId();
+						if (confId != null){
+							ssidId = confId.getSsidId(); 
+						} else {
+							logger.warnf("CAPORT20140526 - CaptivePortalUtils - convert2CpSessionInfoObject - confId is null!!! , ianaId:%s, sn:%s", device.getIanaId(), device.getSn());
+						}
+					} else {
+						logger.warnf("CAPORT20140526 - CaptivePortalUtils - convert2CpSessionInfoObject - ConfigurationSsidsId is null!!! , ianaId:%s, sn:%s", device.getIanaId(), device.getSn());
+
+					}
+				} else {
+					logger.warnf("CAPORT20140526 - CaptivePortalUtils - convert2CpSessionInfoObject - configurationSsidsList has more than one record, get index 0 for default!!!, ianaId:%s, sn:%s", device.getIanaId(), device.getSn());
+				}
+			} else {
+				logger.warnf("CAPORT20140526 - CaptivePortalUtils - convert2CpSessionInfoObject - configurationSsidsList is null!!!,ianaId:%s, sn:%s", device.getIanaId(), device.getSn());
+			}
+			
+			
+		} catch (Exception e){
+			logger.errorf(e, "CAPORT20140526 - CaptivePortalUtils - convert2CpSessionInfoObject- ianaId:%s, ssid:%s, organizationId:%s", confSsidCriteria.getIanaId(), confSsidCriteria.getSsid(), confSsidCriteria.getOrganizationId(), confSsidCriteria.getNetworkId());
+		}		
+		
+		return ssidId;
+	}
+	
+	public static CaptivePortalSessions convert2CaptivePortalSessions(CpSessionInfoObject cpSessionInfoObject){
+		CaptivePortalSessions captivePortalSessions = new CaptivePortalSessions();
+		if (cpSessionInfoObject != null){
+			captivePortalSessions.setBssid(cpSessionInfoObject.getBssid());
+			captivePortalSessions.setClientIp(cpSessionInfoObject.getClient_ip());
+			captivePortalSessions.setClientMac(cpSessionInfoObject.getClient_mac());
+			if (cpSessionInfoObject.getClient_mac() != null && !cpSessionInfoObject.getClient_mac().isEmpty()){
+				captivePortalSessions.setClientMac(cpSessionInfoObject.getClient_mac().replace(":", "-"));
+			}
+			captivePortalSessions.setConnectTime(cpSessionInfoObject.getLast_access_time());
+			captivePortalSessions.setCreatedAt(cpSessionInfoObject.getCreated_at());
+			captivePortalSessions.setDisconnectTime(cpSessionInfoObject.getDisconnect_time());
+			captivePortalSessions.setExpiryDate(cpSessionInfoObject.getExpiry_date());
+			captivePortalSessions.setIanaId(cpSessionInfoObject.getIana_id());
+			captivePortalSessions.setNetworkId(cpSessionInfoObject.getNetwork_id());
+			captivePortalSessions.setSn(cpSessionInfoObject.getSn());
+			captivePortalSessions.setSsid(cpSessionInfoObject.getSsid());
+			
+			if (cpSessionInfoObject.getSsid_id() == null || cpSessionInfoObject.getSsid_id() == 0){
+				captivePortalSessions.setSsidId(getSsidId(cpSessionInfoObject));
+			} else {
+				captivePortalSessions.setSsidId(cpSessionInfoObject.getSsid_id());				
+			}
+			
+			captivePortalSessions.setRemainBandwidth(cpSessionInfoObject.getRemain_bandwidth());
+			captivePortalSessions.setRemainTime(cpSessionInfoObject.getRemain_time());
+			captivePortalSessions.setUserGroupId(cpSessionInfoObject.getUser_group_id());
+			captivePortalSessions.setUsername(cpSessionInfoObject.getUsername());
+			
+			captivePortalSessions.setCpId(cpSessionInfoObject.getCp_id());
+			captivePortalSessions.setSessionTimeOut(cpSessionInfoObject.getSession_timeout());
+			captivePortalSessions.setLastAccessTime(cpSessionInfoObject.getLast_access_time());
+			captivePortalSessions.setStatus(cpSessionInfoObject.getStatus());
+			captivePortalSessions.setQuotaType(cpSessionInfoObject.getQuota_type());
+			captivePortalSessions.setDeviceReplyLogin(cpSessionInfoObject.getDevice_reply_login());
+			captivePortalSessions.setClientLogout(cpSessionInfoObject.getClient_logout());
+			captivePortalSessions.setLastHouseKeepCheckTime(cpSessionInfoObject.getLast_house_keep_check_time());
+			captivePortalSessions.setAccessMode(cpSessionInfoObject.getAccess_mode());
+		}
+		return captivePortalSessions;
+	} // end convert2CaptivePortalSessions
+		
+	public static boolean removeDevCpSessionInfoObjectFromCache(CpSessionInfoObject cpSessionInfoObject){
+		boolean isDeleted = false;
+		try{
+			if (cpSessionInfoObject != null){
+				if (cpSessionInfoObject.getIana_id() != null && 
+						cpSessionInfoObject.getClient_mac() != null &&
+						cpSessionInfoObject.getSsid() != null &&
+						cpSessionInfoObject.getOrganization_id() != null &&
+						cpSessionInfoObject.getNetwork_id() != null 
+						){
+					ACUtil.<CpSessionInfoObject> removePoolObjectBySn(cpSessionInfoObject, CpSessionInfoObject.class);	
+					isDeleted = true;
+				} else {
+					logger.warnf("CAPORT20140526 - CaptivePortalUtils - removeDevCpSessionInfoObjectFromCache, one of the attributes is null: ianaid:%s, clientMac:%s, ssid:%s, orgId:%s, networkId:%s", cpSessionInfoObject.getIana_id(), cpSessionInfoObject.getClient_mac(), cpSessionInfoObject.getSsid(), cpSessionInfoObject.getOrganization_id(), cpSessionInfoObject.getNetwork_id());
+				}
+			}
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - removeDevCpSessionInfoObjectFromCache", e);
+		}
+		
+		return isDeleted;
+	}
+	
+	public static boolean saveCaptivePortalSessions(JsonCaptivePortalRequest jsonCaptivePortalRequest){
+		if (logger.isDebugEnabled()){
+			logger.debugf("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalSessions - JsonCaptivePortalRequest - iana: %s, sn: %s", jsonCaptivePortalRequest.getIana_id(), jsonCaptivePortalRequest.getSn());
+		}
+		boolean isSaved = false;
+				
+		CpSessionInfoObject devCpSessionInfoObject = convert2CpSessionInfoObject(jsonCaptivePortalRequest);
+		
+		if (devCpSessionInfoObject != null){
+			boolean isSet2Cache = setCpSessionInfoObject2Cache(devCpSessionInfoObject);
+			if (isSet2Cache){
+				CaptivePortalSessions captivePortalSessions = convert2CaptivePortalSessions(devCpSessionInfoObject);
+				if (captivePortalSessions.getSsidId() != null){
+					isSaved = saveCaptivePortalSessions(captivePortalSessions, devCpSessionInfoObject.getOrganization_id(), false);
+				} else {
+					if (logger.isDebugEnabled()){
+						logger.warnf("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalSessions - CpSessionInfoObject - iana: %s, sn: %s, orgId: %s", devCpSessionInfoObject.getIana_id(), devCpSessionInfoObject.getSn(), devCpSessionInfoObject.getOrganization_id());
+					}
+				}
+			}
+		} else {
+			logger.warnf("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalSessions - jsonCaptivePortalRequest -> devCpSessionInfoObject cannot be converted - iana: %s, sn: %s, orgId: %s", jsonCaptivePortalRequest.getIana_id(), jsonCaptivePortalRequest.getSn(), jsonCaptivePortalRequest.getOrganization_id());
+		}
+		return isSaved;
+	}
+	public static boolean saveCaptivePortalSessions(CpSessionInfoObject cpSessionInfoObject){
+		if (logger.isDebugEnabled()){
+			logger.debugf("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalSessions - CpSessionInfoObject: %s", cpSessionInfoObject);
+		}
+		boolean isSaved = false;
+		if (cpSessionInfoObject != null){
+			boolean isSet2Cache = setCpSessionInfoObject2Cache(cpSessionInfoObject);
+			if (isSet2Cache){
+				CaptivePortalSessions captivePortalSessions = convert2CaptivePortalSessions(cpSessionInfoObject);
+				isSaved = saveCaptivePortalSessions(captivePortalSessions, cpSessionInfoObject.getOrganization_id(), false);
+			}
+		}
+		return isSaved;
+	}
+	
+	private static boolean saveCaptivePortalSessions(CaptivePortalSessions captivePortalSessions, String organizationId, boolean save2Cache){
+		if (logger.isDebugEnabled()){
+			logger.debugf("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalSessions - CaptivePortalSessions - iana: %s, sn: %s, orgId: %s, save2Cache: %s", captivePortalSessions.getIanaId(), captivePortalSessions.getSn(), organizationId, save2Cache);
+		}
+		boolean isSaved = false;
+		try{
+			if (captivePortalSessions != null && organizationId != null && !organizationId.isEmpty()){
+				if (save2Cache){
+					CpSessionInfoObject cpSessionInfoObject = convert2CpSessionInfoObject(captivePortalSessions, organizationId);
+					setCpSessionInfoObject2Cache(cpSessionInfoObject);	
+				}
+				CaptivePortalSessionsDAO dao = new CaptivePortalSessionsDAO(organizationId);
+				CaptivePortalSessionsCriteria criteria = new CaptivePortalSessionsCriteria();
+				criteria.setClientMac(captivePortalSessions.getClientMac());
+				criteria.setNetworkId(captivePortalSessions.getNetworkId());
+				criteria.setOrganizationId(organizationId);
+				criteria.setSsid(captivePortalSessions.getSsid());
+				
+				List<CaptivePortalSessions> captivePortalSessionsList = dao.getCaptivePortalSessions(criteria);
+				CaptivePortalSessions cpFromDb = null;
+				if (captivePortalSessionsList != null && captivePortalSessionsList.size() > 0){
+					cpFromDb = captivePortalSessionsList.get(0);
+					
+					if (captivePortalSessionsList.size() != 1){
+						logger.warnf("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalSessions - configurationSsidsList has more than one record, get index 0 for default!!!, ianaId:%s, sn:%s", captivePortalSessions.getIanaId(), captivePortalSessions.getSn());						
+					}
+					
+				} 
+				
+				if (cpFromDb != null){
+					captivePortalSessions.setId(cpFromDb.getId());
+				}
+				
+				
+				dao.saveOrUpdate(captivePortalSessions);
+				isSaved = true;
+			}
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - saveCaptivePortalSessions", e);
+		}
+		return isSaved;
+	} // end saveCaptivePortalSessions()
+	
+	public static CpSessionInfoObject getCpSessionInfoObject(CpSessionInfoObjectCriteria criteriaIn){
+		CpSessionInfoObject cpSessionInfoObject = null;
+
+		try{
+			if (criteriaIn.getIanaId() != null && 
+				criteriaIn.getSn() != null && 
+				criteriaIn.getDevicesId() != null && 
+				criteriaIn.getClientMac() != null && 
+				criteriaIn.getSsid() != null && 
+				criteriaIn.getOrganizationId() != null && 
+				criteriaIn.getNetworkId() != null){
+				
+				StopRequeryCpSessionInfoObject stopRequeryCpSessionInfoObject = getStopRequeryCpSessionInfoObjectFromCache(criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(),criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+				
+				if (stopRequeryCpSessionInfoObject != null){
+					return cpSessionInfoObject;
+				}
+				
+				cpSessionInfoObject = getCpSessionInfoObjectFromCache(criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(),criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+				
+				if (cpSessionInfoObject == null){
+					
+					CaptivePortalSessionsCriteria criteria = new CaptivePortalSessionsCriteria();
+					criteria.setClientMac(criteriaIn.getClientMac());
+					criteria.setNetworkId(criteriaIn.getNetworkId());
+					criteria.setOrganizationId(criteriaIn.getOrganizationId());
+					
+					ConfigurationSsidsDAO configurationSsidsDao = new ConfigurationSsidsDAO(criteriaIn.getOrganizationId());
+					ConfigurationSsidsCriteria confSsidCriteria = new ConfigurationSsidsCriteria();
+					confSsidCriteria.setDeviceId(criteriaIn.getDevicesId());
+					confSsidCriteria.setSsidEnabled(true);
+					confSsidCriteria.setNetworkId(criteriaIn.getNetworkId());
+					confSsidCriteria.setSsid(criteriaIn.getSsid());
+					
+					List<ConfigurationSsids> configurationSsidsList = configurationSsidsDao.getConfigurationSsidsByDeviceLevelThenNetworkLevel(confSsidCriteria);
+					// TODO put all the portalUsages to cache, check whether the portalUsages has only one record return
+					ConfigurationSsids configurationSsids = null;
+
+					if (configurationSsidsList !=  null){
+						if (configurationSsidsList.size() > 0){
+							configurationSsids = configurationSsidsList.get(0);
+							
+							if (configurationSsidsList.size() != 1){
+								if (logger.isDebugEnabled()){
+									logger.debugf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - configurationSsidsList has more than one record, get index 0 for default!!!, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());		
+								}
+							}
+							
+						} else {
+							if (logger.isDebugEnabled()){
+								logger.debugf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - configurationSsidsList has no record, get index 0 for default!!!, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+							}
+						}
+					} else {
+						stopRequeryCpSessionInfoObject = new StopRequeryCpSessionInfoObject(criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(),criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+						setStopRequeryCpSessionInfoObject2Cache(stopRequeryCpSessionInfoObject);
+						if (logger.isDebugEnabled()){
+							logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - configurationSsidsList is null!!!, setStopRequeryCpSessionInfoObject2Cache :%s", stopRequeryCpSessionInfoObject);
+						}
+						
+						logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - configurationSsidsList is null!!!, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+					}
+					
+					if (configurationSsids != null && configurationSsids.getId() != null){
+						ConfigurationSsidsId confSsidsId = configurationSsids.getId();
+						
+						if (confSsidsId != null && confSsidsId.getSsidId() != 0){
+							criteria.setSsidId(confSsidsId.getSsidId());
+							
+							List<CaptivePortalSessions> captivePortalSessionList = getCaptivePortalSessionsFromDb(criteria, criteriaIn.getOrganizationId());
+							CaptivePortalSessions captivePortalSessions = null;
+							if (captivePortalSessionList != null){
+								if (captivePortalSessionList.size() > 0){
+									captivePortalSessions = captivePortalSessionList.get(0);
+									
+									if (captivePortalSessionList.size() != 1){
+										logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - captivePortalSessionList.size() is more than 1 !!!, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());										
+									}
+								} else {
+									logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - captivePortalSessionList is null or captivePortalSessionList.size() is 0 !!!, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+								}
+							}
+							
+							// put into cache
+							if (captivePortalSessions != null){
+								
+								cpSessionInfoObject = convert2CpSessionInfoObject(captivePortalSessions, criteriaIn.getOrganizationId());	
+								
+								
+								boolean is_captive_enabled = isPortalEnabled(configurationSsids);
+								
+								cpSessionInfoObject.setIs_portal_enabled(is_captive_enabled);
+								setCpSessionInfoObject2Cache(cpSessionInfoObject);
+							}
+						}
+					} else {
+						logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - captivePortalSessionList.size is larger than 1 !!!, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+					}
+				} // end if 
+			} else {
+				logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObject - ianaId, sn, devicesId, clientMac, ssid, organizationId or networkId is/are null!!!, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+			}
+		} catch (Exception e){
+			logger.errorf(e, "CAPORT20140526 - CaptivePortalUtils - getDevCpSessionInfoObjectFromCache, ianaId:%s, clientMac:%s, ssid:%s, organizationId:%s, networkId:%s", criteriaIn.getIanaId(), criteriaIn.getClientMac(), criteriaIn.getSsid(), criteriaIn.getOrganizationId(), criteriaIn.getNetworkId());
+		}
+		return cpSessionInfoObject;
+	}
+	
+	private static boolean isPortalEnabled(ConfigurationSsids configurationSsids){
+		boolean isPortalEnabled = false;
+		
+		if (configurationSsids != null && configurationSsids.getConfig() != null && !configurationSsids.getConfig().isEmpty()){
+			List<String> strMatchList = CommonUtils.regMatch(configurationSsids.getConfig(), CONFIG_SSID_PORTAL_ENABLED_PATTERN);
+			if (strMatchList != null && strMatchList.size() > 0 ){
+				String match = strMatchList.get(0);
+				if (match.indexOf("true") > -1){
+					isPortalEnabled = true;
+				}
+				if (strMatchList.size() != 1){
+					logger.warnf("CAPORT20140526 - CaptivePortalUtils - isPortalEnabled more than one portal_enabled tag!!!, configurationSsids:%s", configurationSsids.getConfig());
+				}
+			}	
+		}
+		
+		return isPortalEnabled;
+	}
+	
+	private static List<CaptivePortalSessions> getCaptivePortalSessionsFromDb(CaptivePortalSessionsCriteria criteria, String organizationId){
+		List<CaptivePortalSessions> captivePortalSessionsList = null;
+		try{
+			CaptivePortalSessionsDAO captivePortalSessionsDao = new CaptivePortalSessionsDAO(organizationId);
+			captivePortalSessionsList = captivePortalSessionsDao.getCaptivePortalSessions(criteria);
+		} catch (Exception e){
+			logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCaptivePortalSessionsFromDb,clientMac:%s, networkId:%s, organizationId:%s, ssidId:%s", criteria.getClientMac(), criteria.getNetworkId(), organizationId, criteria.getSsidId());
+		}
+		return captivePortalSessionsList;
+	}
+	
+	public static List<CaptivePortalActivity> getCaptivePortalActivityListFromDb(String ssid, String organizationId){
+		List<CaptivePortalActivity> captivePortalActivityList = null;
+		try{
+			CaptivePortalActivitiesDAO captivePortalActivitiesDao = new CaptivePortalActivitiesDAO(organizationId);
+			captivePortalActivityList = captivePortalActivitiesDao.getCaptivePortalActivities(ssid);
+		} catch (Exception e){
+			logger.errorf(e, "CAPORT20140526 - CaptivePortalUtils - getCaptivePortalActivityListFromDb, ssid:%s, organizationId:%s",ssid, organizationId);
+		}
+		return captivePortalActivityList;
+	}
+	
+	private static StopRequeryCpSessionInfoObject getStopRequeryCpSessionInfoObjectFromCache(Integer ianaId, String clientMac, String ssid, String organizationId, Integer networkId){
+		StopRequeryCpSessionInfoObject stopRequeryCpSessionInfoObject = new StopRequeryCpSessionInfoObject(ianaId, clientMac, ssid, organizationId, networkId);
+		try{
+			stopRequeryCpSessionInfoObject = getStopRequeryCpSessionInfoObjectFromCache(stopRequeryCpSessionInfoObject);
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - getStopRequeryCpSessionInfoObjectFromCache", e);
+		}
+		return stopRequeryCpSessionInfoObject;
+	}
+	
+	private static StopRequeryCpSessionInfoObject getStopRequeryCpSessionInfoObjectFromCache(StopRequeryCpSessionInfoObject stopRequeryCpSessionInfoObject){
+		try{
+			if (stopRequeryCpSessionInfoObject != null && stopRequeryCpSessionInfoObject.getIana_id() != null 
+					&& stopRequeryCpSessionInfoObject.getKey() != null && !stopRequeryCpSessionInfoObject.getKey().isEmpty()){
+				stopRequeryCpSessionInfoObject = ACUtil.getPoolObjectByKey(stopRequeryCpSessionInfoObject.getKey());	
+			} else {
+				logger.warnf("CAPORT20140526 - CaptivePortalUtils - getStopRequeryCpSessionInfoObjectFromCache, stopRequeryCpSessionInfoObject - ianaId or sn is/ are null!!!");
+				stopRequeryCpSessionInfoObject = null;
+			}
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - getStopRequeryCpSessionInfoObjectFromCache", e);
+		}
+		return stopRequeryCpSessionInfoObject;
+	}
+	
+	private static boolean setStopRequeryCpSessionInfoObject2Cache(StopRequeryCpSessionInfoObject stopRequeryCpSessionInfoObject){
+		boolean isSet = false;
+		try{
+			if (stopRequeryCpSessionInfoObject != null){
+				if (stopRequeryCpSessionInfoObject.getIana_id() != null && 
+					stopRequeryCpSessionInfoObject.getClient_mac() != null &&
+					stopRequeryCpSessionInfoObject.getSsid() != null &&
+					stopRequeryCpSessionInfoObject.getOrganization_id() != null &&
+					stopRequeryCpSessionInfoObject.getNetwork_id() != null 
+					){
+					ACUtil.<StopRequeryCpSessionInfoObject> cachePoolObjectBySn(stopRequeryCpSessionInfoObject, StopRequeryCpSessionInfoObject.class);
+				} else {
+					logger.warnf("CAPORT20140526 - CaptivePortalUtils - setStopRequeryCpSessionInfoObject2Cache, one of the attributes is null: ianaid:%s, clientMac:%s, ssid:%s, orgId:%s, networkId:%s", stopRequeryCpSessionInfoObject.getIana_id(), stopRequeryCpSessionInfoObject.getClient_mac(), stopRequeryCpSessionInfoObject.getSsid(), stopRequeryCpSessionInfoObject.getOrganization_id(), stopRequeryCpSessionInfoObject.getNetwork_id());
+				}
+			} // end if (stopRequeryCpSessionInfoObject != null)
+			isSet = true;
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - setStopRequeryCpSessionInfoObject2Cache", e);
+		} // end try ... catch ...
+		return isSet;
+	} // end setStopRequeryCpSessionInfoObject2Cache
+	
+	private static CpSessionInfoObject getCpSessionInfoObjectFromCache(Integer ianaId, String clientMac, String ssid, String organizationId, Integer networkId){
+		CpSessionInfoObject cpSessionInfoObject = new CpSessionInfoObject(ianaId, clientMac, ssid, organizationId, networkId);
+		try{
+			cpSessionInfoObject = getCpSessionInfoObjectFromCache(cpSessionInfoObject);
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObjectFromCache", e);
+		}
+		return cpSessionInfoObject;
+	}
+	
+	private static CpSessionInfoObject getCpSessionInfoObjectFromCache(CpSessionInfoObject cpSessionInfoObject){
+		try{
+			if (cpSessionInfoObject != null && cpSessionInfoObject.getIana_id() != null 
+					&& cpSessionInfoObject.getKey() != null && !cpSessionInfoObject.getKey().isEmpty()){
+				cpSessionInfoObject = ACUtil.getPoolObjectByKey(cpSessionInfoObject.getKey());	
+			} else {
+				logger.warnf("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObjectFromCache, cpSessionInfoObject - ianaId or sn is/ are null!!!");
+				cpSessionInfoObject = null;
+			}
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - getCpSessionInfoObjectFromCache", e);
+		}
+		return cpSessionInfoObject;
+	}
+	
+	private static boolean setCpSessionInfoObject2Cache(CpSessionInfoObject cpSessionInfoObject){
+		boolean isSet = false;
+		try{
+			if (cpSessionInfoObject != null){
+				if (cpSessionInfoObject.getIana_id() != null && 
+					cpSessionInfoObject.getClient_mac() != null &&
+					cpSessionInfoObject.getSsid() != null &&
+					cpSessionInfoObject.getOrganization_id() != null &&
+					cpSessionInfoObject.getNetwork_id() != null 
+					){
+					ACUtil.<CpSessionInfoObject> cachePoolObjectBySn(cpSessionInfoObject, CpSessionInfoObject.class);
+				} else {
+					logger.warnf("CAPORT20140526 - CaptivePortalUtils - setCpSessionInfoObject2Cache, one of the attributes is null: ianaid:%s, clientMac:%s, ssid:%s, orgId:%s, networkId:%s", cpSessionInfoObject.getIana_id(), cpSessionInfoObject.getClient_mac(), cpSessionInfoObject.getSsid(), cpSessionInfoObject.getOrganization_id(), cpSessionInfoObject.getNetwork_id());
+				}
+			} // end if (cpSessionInfoObject != null)
+			isSet = true;
+		} catch (Exception e){
+			logger.error("CAPORT20140526 - CaptivePortalUtils - setCpSessionInfoObject2Cache", e);
+		} // end try ... catch ...
+		return isSet;
+	} // end setCpSessionInfoObject2Cache
+	
+} // end class

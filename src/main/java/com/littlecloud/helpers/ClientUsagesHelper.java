@@ -1,0 +1,139 @@
+package com.littlecloud.helpers;
+
+import java.util.Calendar;
+import java.util.HashMap;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.pool.object.StationList;
+import com.littlecloud.pool.object.StationListObject;
+import com.littlecloud.pool.object.StationUsageObject;
+import com.littlecloud.pool.object.StationUsageObject.StationUsageList;
+import com.littlecloud.pool.object.utils.StationListObjectUtils;
+import com.littlecloud.pool.object.utils.StationUsageObjectUtils;
+import com.littlecloud.utils.CalendarUtils;
+
+public class ClientUsagesHelper {
+	private static final Logger log = Logger.getLogger(ClientUsagesHelper.class);
+	private Integer ianaId;
+	private String sn;
+	private Integer networkId;
+	private StationUsageObject stationUsageObject;
+	private StationListObject stationListObject;
+	private HashMap<String, StationList> stationIpMap;
+	
+	public ClientUsagesHelper(Integer ianaId, String sn, Integer networkId){
+		this.ianaId = ianaId;
+		this.sn = sn;
+		this.networkId = networkId;
+		init();
+	}
+	
+	private void init(){
+		try{
+			stationIpMap = new HashMap<String, StationList>();
+			getStationUsageObjectFromCache();
+			getStationListObjectFromCacheAndDoAllChecking();
+			fillStationIpMap();
+		} catch (Exception e){
+			log.error("ClientUsagesHelper.init() - Exception:", e);
+		}
+	}
+	private void fillStationIpMap(){
+		try{
+			if (stationListObject != null && stationListObject.getStation_list() != null){
+				for(StationList stationItem: stationListObject.getStation_list()) {
+					stationIpMap.put(stationItem.getIp(), stationItem);
+				}
+			}
+		} catch (Exception e){
+			log.error("ClientUsagesHelper.fillStationIpMap() - Exception:", e);
+		}
+	}
+	
+	private void getStationListObjectFromCacheAndDoAllChecking(){
+		try{
+			getStationListObjectFromCache();
+			removeStationListObjectFromCacheIfUnhealthy();
+			checkAndFixStationListObjectTimestampProblem();		
+		} catch (Exception e){
+			log.error("ClientUsagesHelper.getStationListObjectFromCacheAndDoAllChecking() - Exception:", e);
+		}
+	}
+	
+	private void getStationUsageObjectFromCache(){
+		stationUsageObject = StationUsageObjectUtils.getStationUsageObject(ianaId, sn);
+		if (stationUsageObject != null && stationUsageObject.getStation_list() != null){
+			stationUsageObject.setNetwork_id(networkId);
+		}
+	}
+	
+	private void getStationListObjectFromCache(){
+		stationListObject = StationListObjectUtils.getStationListObject(ianaId, sn);
+		if (stationListObject != null){
+			stationListObject.setNetwork_id(networkId);
+		}
+	}
+	private void removeStationListObjectFromCacheIfUnhealthy(){
+		if( stationListObject.getNetwork_id() == null || stationListObject.getDevice_id() == null ) {
+			boolean isRemoved = StationListObjectUtils.removeStationListObject(stationListObject);
+			if (!isRemoved){
+				log.warnf("ClientUsagesHelper.removeStationListObjectFromCacheIfUnhealthy() - StationListObject cannot be removed! stationListObject: %s", stationListObject);
+			}
+		}
+	}
+	private void checkAndFixStationListObjectTimestampProblem(){
+		if (stationListObject != null && stationListObject.getStation_list() != null){
+			if( stationListObject.getNetwork_id() != null && stationListObject.getDevice_id() != null ) {
+				if(stationListObject.getTimestamp() == null) {
+					if (stationListObject.getCreateTime() != null){
+						int createTime = (int) (stationListObject.getCreateTime() / 1000);
+						stationListObject.setTimestamp(createTime);
+						log.warnf("StartPersistReportFromCache: Persist clientUsages abnormal Station List with null timestamp for sn: %s and replace with createTime: %s", sn, createTime);
+					} else {
+						Calendar utcCalToday = CalendarUtils.getUtcCalendarToday();
+						int timestamp = CalendarUtils.changeDate2Unixtime(utcCalToday.getTime());
+						stationListObject.setTimestamp(timestamp);
+					}
+				}
+			} 
+		} // end if (stationListObject != null)
+	}
+//	public List<StationList> getStationList(){
+//		List<StationList> stationList = null;
+//		if (stationListObject != null){
+//			stationList = stationListObject.getStation_list();
+//		}
+//		return stationList;
+//	}
+	
+	public StationList getStationListItem(String ip){
+		StationList stationListItem = null;
+		if (stationIpMap != null){
+			stationListItem = stationIpMap.get(ip);
+		}
+		return stationListItem;
+	}
+	
+	public List<StationUsageList> getStationUsageList() {
+		List<StationUsageList> stationUsageList = null;
+		if (stationUsageObject != null){
+			stationUsageList = stationUsageObject.getStation_list();
+		}
+		return stationUsageList;
+	}
+
+	public void clearStationListFromStationUsageObjectAndUpdateCache(){
+		try{
+			if (getStationUsageList() != null){
+				getStationUsageList().clear();
+				StationUsageObjectUtils.updateStationUsageObject(stationUsageObject);
+			}
+		} catch (Exception e){
+			log.error("ClientUsagesHelper.clearStationListFromStationUsageObjectAndUpdateCache() - Exception:", e);
+		}
+	}
+	
+}

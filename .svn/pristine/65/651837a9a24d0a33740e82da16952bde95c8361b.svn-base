@@ -1,0 +1,196 @@
+package com.littlecloud.control.json.model.config.util;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Properties;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.json.model.config.JsonConf.CONFIG_TYPE;
+import com.littlecloud.control.json.model.config.JsonConf_SsidProfiles;
+
+public class VlanConfigUtils {
+	
+	private static final Logger log = Logger.getLogger(SystemConfigUtils.class);
+	
+	private static final List<String> MAX_VLAN_PATTERN = Arrays.asList("^LAN[0-9].*_VLAN_ID$");
+	
+	/* Return false for invalid input 
+	 * null JsonConf_SsidProfiles to remove ssid
+	 * */
+	public static boolean configSsidVlan(SsidVlanConfigInfo ctr)
+	{
+		try {
+			if (ctr==null)
+				return false;
+			
+			if (ctr.getSsidProfileJsonLst()==null || ctr.getSsidProfileJsonLst().size()==0)
+				return true;
+			
+			int maxSsid = ctr.getSsidProfileJsonLst().size();
+			
+			if (!removeSsidProfileWithoutVlanId(ctr, ctr.getSsidProfileJsonLst()))
+				return false;
+			
+			if (!removeSsidProfileWithoutVlanId(ctr, ctr.getSsidProfileReservedJsonLst()))
+				return false;
+			
+			List<JsonConf_SsidProfiles> ssidLst = ctr.getSsidProfileJsonLst();
+			List<JsonConf_SsidProfiles> ssidReservedLst = ctr.getSsidProfileReservedJsonLst(); 		
+	
+			if (ssidReservedLst!=null && ssidReservedLst.size()!=0)
+			{
+				int reservedSsidRequired = maxSsid - ssidLst.size();
+				for (int i = 0; i < reservedSsidRequired; i++)
+				{		
+					if (i+1>ssidReservedLst.size())
+						break;
+					
+					JsonConf_SsidProfiles ssidReserve = ssidReservedLst.get(i);
+					ssidLst.add(ssidReserve);
+					ctr.getSbSummary().append(String.format("\n* - SSID %d %s is substituted - with vlan id %d found", ssidReserve.getSsid_id(), ssidReserve.getSsid(), ssidReserve.getVlan_id()));			
+				}
+			}
+			
+			reorderSsidId(ctr);
+		} catch (Exception e)
+		{
+			log.error("ctr"+ctr, e);
+			return false;
+		}
+		
+		return true;		
+	}
+	
+	private static boolean reorderSsidId(SsidVlanConfigInfo ctr)
+	{
+		List<JsonConf_SsidProfiles> loopSsidLst = new ArrayList<JsonConf_SsidProfiles>(ctr.getSsidProfileJsonLst());
+		
+		int ssidId = 1;
+		for (JsonConf_SsidProfiles ssidProfile:loopSsidLst)
+		{
+			ssidProfile.setSsid_id(ssidId++);
+		}
+		
+		return true;
+	}
+	
+	private static boolean removeSsidProfileWithoutVlanId(SsidVlanConfigInfo ctr, List<JsonConf_SsidProfiles> ssidProfileLst)
+	{
+		if (ssidProfileLst==null || ssidProfileLst.size()==0)
+			return true;
+		
+		List<JsonConf_SsidProfiles> loopSsidLst = new ArrayList<JsonConf_SsidProfiles>(ssidProfileLst);
+		StringBuilder sbSummary = ctr.getSbSummary();
+		
+		for (JsonConf_SsidProfiles ssidProfile:loopSsidLst)
+		{		
+			switch (ctr.getConfigType())
+			{
+				case MAX:
+					if (ssidProfile.getVlan_id() !=null && ssidProfile.getVlan_id()!=0 && !isVlanIdExists(ctr.getFullconfig(), ssidProfile))
+					{
+						ssidProfileLst.remove(ssidProfile);
+						sbSummary.append(String.format("\n* - SSID %d %s is disselected - no vlan id %d found", ssidProfile.getSsid_id(), ssidProfile.getSsid(), ssidProfile.getVlan_id()));
+					}
+					break;
+				case AP:
+					break;
+				case UNKNOWN:
+					sbSummary.append(String.format("ERROR!!! - Unknown config type for %s", ctr));
+					return false;
+			}			
+		}
+		
+		return true;
+	}
+	
+	private static boolean isVlanIdExists(Properties fullconfig, JsonConf_SsidProfiles ssidProfile) {
+				
+		@SuppressWarnings("unchecked")
+		Enumeration<String> enumeration = (Enumeration<String>) fullconfig.propertyNames();
+		while (enumeration.hasMoreElements()) 
+		{
+			String key = (String) enumeration.nextElement();
+			
+			for (String pattern:MAX_VLAN_PATTERN)
+			{
+				if (key.matches(pattern))
+				{
+					String value = (String) fullconfig.get(key);
+					if (value!=null)
+					{
+						value = value.replace("\"", "");
+						Integer avalVlanId = Integer.valueOf(value);
+						if (avalVlanId.intValue()==ssidProfile.getVlan_id().intValue())
+							return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+	
+	public static class SsidVlanConfigInfo extends CommonConfigInfo {
+		private StringBuilder sbSummary;
+		private CONFIG_TYPE configType;
+		private Properties fullconfig;
+		private List<JsonConf_SsidProfiles> ssidProfileJsonLst;
+		private List<JsonConf_SsidProfiles> ssidProfileReservedJsonLst;
+
+		public CONFIG_TYPE getConfigType() {
+			return configType;
+		}
+
+		public void setConfigType(CONFIG_TYPE configType) {
+			this.configType = configType;
+		}
+
+		public Properties getFullconfig() {
+			return fullconfig;
+		}
+
+		public void setFullconfig(Properties fullconfig) {
+			this.fullconfig = fullconfig;
+		}
+
+		public List<JsonConf_SsidProfiles> getSsidProfileJsonLst() {
+			return ssidProfileJsonLst;
+		}
+
+		public void setSsidProfileJsonLst(List<JsonConf_SsidProfiles> ssidProfileJsonLst) {
+			this.ssidProfileJsonLst = ssidProfileJsonLst;
+		}
+		
+		public List<JsonConf_SsidProfiles> getSsidProfileReservedJsonLst() {
+			return ssidProfileReservedJsonLst;
+		}
+
+		public void setSsidProfileReservedJsonLst(List<JsonConf_SsidProfiles> ssidProfileReservedJsonLst) {
+			this.ssidProfileReservedJsonLst = ssidProfileReservedJsonLst;
+		}
+
+		public StringBuilder getSbSummary() {
+			return sbSummary;
+		}
+
+		public void setSbSummary(StringBuilder sbSummary) {
+			this.sbSummary = sbSummary;
+		}
+
+		@Override
+		public String toString() {
+			StringBuilder builder = new StringBuilder();
+			builder.append("SsidVlanConfigInfo [configType=");
+			builder.append(configType);
+			builder.append(", fullconfig=");
+			builder.append(fullconfig);
+			builder.append(", ssidProfileJsonLst=");
+			builder.append(ssidProfileJsonLst);
+			builder.append("]");
+			return builder.toString();
+		}
+	}
+}

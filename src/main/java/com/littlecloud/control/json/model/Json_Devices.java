@@ -1,0 +1,1060 @@
+package com.littlecloud.control.json.model;
+
+import java.io.Serializable;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+
+import com.google.gson.JsonElement;
+import com.google.gson.annotations.SerializedName;
+import com.littlecloud.control.dao.TagsDAO;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.Devices.ONLINE_STATUS;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.Tags;
+import com.littlecloud.control.entity.report.DeviceGpsLocations;
+import com.littlecloud.control.json.model.config.JsonConf_Admin;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.fusionhub.Json_FusionHubLicense;
+import com.littlecloud.pool.object.ConfigSettingsObject.SsidProfiles;
+import com.littlecloud.pool.object.DevOnlineObject;
+import com.littlecloud.pool.object.utils.DeviceUtils;
+import com.littlecloud.pool.object.utils.OrgInfoUtils;
+
+public class Json_Devices implements Serializable {
+
+	private Integer id;
+	private Integer network_id;
+	private String network_name;
+	private Integer iana_id;
+	private String sn;
+	private ArrayList<String> peer_ids;
+	private String name;
+	private String status;
+	private Float usage;
+	private Integer product_id;
+	@SerializedName("client_count")
+	private Integer clientz;
+	private String fw_ver;
+	private String fw_key;
+	private String fw_url;
+	private JsonElement feature_activations;
+	private String ip;
+	private Date last_online;
+	private Date offline_at;
+	private Date first_appear;
+	private String lan_mac;
+	private Integer bootflash_active;
+	private List<String> bootflashs;
+	private String device_ip;
+	private String host_ip;
+	private Integer port;
+	private Boolean use_ssl;
+
+	/* LAZY Load */
+	private List<Json_Device_Interfaces> interfaces;
+	private List<Json_Device_Vlan_Interfaces> vlan_interfaces;
+	private String product_name;		
+	private String product_code;
+	private String product_type;
+	private String model;
+	private String mv;
+	private List<String> tags;
+
+	private Float latitude;
+	private Float longitude;
+	private String address;
+	private Date location_timestamp;
+	private Boolean isStatic;
+	private Date expiry_date;
+	private Date sub_expiry_date;
+
+	@SerializedName("points")
+	private List<Json_Device_Locations> locations;
+	private Json_Device_Locations point;
+	private String type;
+	
+	private Boolean expired; 
+	private Date config_updated_at;
+	private Integer support_ssid_count;
+	private String features;
+	
+	private String dev_level_cfg;
+	
+	private List<RadioMode> radio_modules;
+	private List<SsidProfiles> ssid_profiles;
+	
+	private String network_type;
+	private String device_type;
+	private String v6_license;
+	private Date last_sync_date;
+	private String version;
+	private Long uptime;
+	private Date uptime_appear;
+	private Integer fw_pending_trial_round;
+	private Integer fw_pending_max_no_of_trial;
+	
+	private String fw_pending_ver;
+	private Date fw_pending_schedule_time;
+	private Date fw_pending_upgrade_time;
+	private Integer fw_pending_status;
+	private Date fw_pending_network_time;
+	private String network_time;
+	
+//	private String group_name;
+//	private Integer group_id;
+	
+	private Boolean is_master_device;
+	private String wifi_cfg;
+	private Date config_lastput;
+	private Boolean ddns_enabled;
+	private List<String> ddns_names;
+	private ONLINE_STATUS onlineStatus;
+	private boolean sub_expired;
+	private String wtp_ip;
+	private Json_FusionHubLicense licenseUpdateInfo;
+	private JsonConf_Admin adminConf;
+	
+	public ONLINE_STATUS getOnlineStatus() {
+		return onlineStatus;
+	}
+
+	public void setOnlineStatus(ONLINE_STATUS onlineStatus) {
+		this.onlineStatus = onlineStatus;
+	}
+
+	public Boolean getDdns_enabled() {
+		return ddns_enabled;
+	}
+
+	public void setDdns_enabled(Boolean ddns_enabled) {
+		this.ddns_enabled = ddns_enabled;
+	}
+
+	public List<String> getDdns_names() {
+		return ddns_names;
+	}
+
+	public void setDdns_names(List<String> ddns_names) {
+		this.ddns_names = ddns_names;
+	}
+
+	public Integer getFw_pending_trial_round() {
+		return fw_pending_trial_round;
+	}
+
+	public void setFw_pending_trial_round(Integer fw_pending_trial_round) {
+		this.fw_pending_trial_round = fw_pending_trial_round;
+	}
+
+	public Integer getFw_pending_max_no_of_trial() {
+		return fw_pending_max_no_of_trial;
+	}
+
+	public void setFw_pending_max_no_of_trial(Integer fw_pending_max_no_of_trial) {
+		this.fw_pending_max_no_of_trial = fw_pending_max_no_of_trial;
+	}
+
+	public String getFw_key() {
+		return fw_key;
+	}
+
+	public void setFw_key(String fw_key) {
+		this.fw_key = fw_key;
+	}
+
+	public String getFw_url() {
+		return fw_url;
+	}
+
+	public void setFw_url(String fw_url) {
+		this.fw_url = fw_url;
+	}
+
+	public JsonElement getFeature_activations() {
+		return feature_activations;
+	}
+
+	public void setFeature_activations(JsonElement feature_activations) {
+		this.feature_activations = feature_activations;
+	}
+
+	public Integer getProduct_id() {
+		return product_id;
+	}
+
+	public void setProduct_id(Integer product_id) {
+		this.product_id = product_id;
+	}
+
+	public Boolean getIs_master_device() {
+		return is_master_device;
+	}
+
+	public void setIs_master_device(Boolean is_master_device) {
+		this.is_master_device = is_master_device;
+	}
+
+	public Date getLast_sync_date() {
+		return last_sync_date;
+	}
+
+	public void setLast_sync_date(Date last_sync_date) {
+		this.last_sync_date = last_sync_date;
+	}
+
+	public JsonConf_Admin getAdminConf() {
+		return adminConf;
+	}
+
+	public void setAdminConf(JsonConf_Admin adminConf) {
+		this.adminConf = adminConf;
+	}
+
+	public class RadioMode
+	{
+		private Integer module_id;
+		private String frequency_band;
+		private String active_frequency_band;
+		
+		public String getFrequency_band() 
+		{
+			return frequency_band;
+		}
+		public void setFrequency_band(String frequency_band) 
+		{
+			this.frequency_band = frequency_band;
+		}
+		public Integer getModule_id() {
+			return module_id;
+		}
+		public void setModule_id(Integer module_id) {
+			this.module_id = module_id;
+		}
+		public String getActive_frequency_band() {
+			return active_frequency_band;
+		}
+		public void setActive_frequency_band(String active_frequency_band) {
+			this.active_frequency_band = active_frequency_band;
+		}
+		
+	}
+	
+//	public class SsidProfile implements Serializable
+//	{
+//		private Integer id;
+//		private String ssid;
+//		public Integer getId() {
+//			return id;
+//		}
+//		public void setId(Integer id) {
+//			this.id = id;
+//		}
+//		public String getSsid() {
+//			return ssid;
+//		}
+//		public void setSsid(String ssid) {
+//			this.ssid = ssid;
+//		}
+//		@Override
+//		public String toString() {
+//			StringBuilder builder = new StringBuilder();
+//			builder.append("SsidProfile [id=");
+//			builder.append(id);
+//			builder.append(", ssid=");
+//			builder.append(ssid);
+//			builder.append("]");
+//			return builder.toString();
+//		}
+//	}
+	
+	public String getWtp_ip() {
+		return wtp_ip;
+	}
+
+	public void setWtp_ip(String wtp_ip) {
+		this.wtp_ip = wtp_ip;
+	}
+
+	public void setUsage(Float usage) {
+		this.usage = usage;
+	}
+
+	public List<Json_Device_Locations> getLocations() {
+		return locations;
+	}
+
+	public void setLocations(List<Json_Device_Locations> locations) {
+		this.locations = locations;
+	}
+
+	public Json_Device_Locations getPoint() {
+		return point;
+	}
+
+	public Integer getIana_id() {
+		return iana_id;
+	}
+
+	public void setIana_id(Integer iana_id) {
+		this.iana_id = iana_id;
+	}
+
+	public boolean isSub_expired() {
+		return sub_expired;
+	}
+
+	public void setSub_expired(boolean sub_expired) {
+		this.sub_expired = sub_expired;
+	}
+
+	public void setPoint(Json_Device_Locations point) {
+		this.point = point;
+	}
+
+	public String getType() {
+		return type;
+	}
+
+	public void setType(String type) {
+		this.type = type;
+	}
+
+	public Boolean getExpired() {
+		return expired;
+	}
+
+	public void setExpired(Boolean expired) {
+		this.expired = expired;
+	}
+	
+	public Json_FusionHubLicense getLicenseUpdateInfo() {
+		return licenseUpdateInfo;
+	}
+	
+	public void setLicenseUpdateInfo(Json_FusionHubLicense licenseUpdateInfo) {
+		this.licenseUpdateInfo = licenseUpdateInfo;
+	}
+
+	public static List<String> getTagNameList(Devices dev, String orgId) throws SQLException {
+		/* get tag list */
+		List<String> tagList = new ArrayList<String>();
+		TagsDAO tagDAO = new TagsDAO(orgId);
+		List<Tags> tagLst = tagDAO.getAllTagsWithDeviceIdList(Arrays.asList(dev.getId()));
+		//for (Tags dt : dev.getTagses()) {
+		for (Tags dt : tagLst) {
+			tagList.add(dt.getName());
+		}
+		Collections.sort(tagList);
+
+		return tagList;
+	}
+
+	public void setLatitude(Float latitude) {
+		this.latitude = latitude;
+	}
+
+	public void setLongitude(Float longitude) {
+		this.longitude = longitude;
+	}
+
+//	public static List<Json_Device_Interfaces> getInterfacesList(Devices dev) {
+//		List<Json_Device_Interfaces> itfJsonList = new ArrayList<Json_Device_Interfaces>();
+//		for (DeviceInterfaces itf : dev.getDeviceInterfaceses())
+//		{
+//			Json_Device_Interfaces itfJson = new Json_Device_Interfaces(itf);
+//			itfJsonList.add(itfJson);
+//		}
+//		return itfJsonList;
+//	}
+
+	public Date getLocation_timestamp() {
+		return location_timestamp;
+	}
+
+	public void setLocation_timestamp(Date location_timestamp) {
+		this.location_timestamp = location_timestamp;
+	}
+
+	public Boolean getIsStatic() {
+		return isStatic;
+	}
+
+	public void setIsStatic(Boolean isStatic) {
+		this.isStatic = isStatic;
+	}
+
+	public Json_Devices parseDevices(Devices dev, DeviceGpsLocations devLoc, String orgId) throws SQLException
+	{
+		if (devLoc != null)
+		{
+			this.latitude = devLoc.getLatitude();
+			this.longitude = devLoc.getLongitude();
+		}
+
+		parseDevices(dev, orgId);
+
+		return this;
+	}
+
+	public Json_Devices parseDevices(Devices dev, String orgId) throws SQLException
+	{
+		//NetworksDAO netDAO = new NetworksDAO(orgId);			
+		Networks net = null;
+		//net = netDAO.findById(dev.getNetworkId());
+		net = OrgInfoUtils.getNetwork(orgId, dev.getNetworkId());
+		id = dev.getId();
+		//network_id = dev.getNetworks().getId();
+		network_id = dev.getNetworkId();
+		sn = dev.getSn();
+		name = dev.getName();
+		if( net != null )
+		{
+			if( dev.getLastOnline() != null )
+			{
+				last_online = DateUtils.offsetFromUtcTimeZoneId(dev.getLastOnline(), net.getTimezone());
+			}
+			if( dev.getOfflineAt() != null )
+			{
+				offline_at = DateUtils.offsetFromUtcTimeZoneId(dev.getOfflineAt(), net.getTimezone());
+			}
+			if( dev.getFirstAppear() != null )
+			{			
+				//System.out.println("The network timezone is "+net.getTimezone());
+				first_appear=DateUtils.offsetFromUtcTimeZoneId(dev.getFirstAppear(), net.getTimezone());
+			}
+		}
+		
+		onlineStatus = DeviceUtils.getDevOnlineStatus(dev);
+		/* model name */
+		/* model code */
+		/* tag list */
+
+		/* cache data below */
+		// usage = devInfo.getDtx() + devInfo.getDrx();
+		// status = devInfo.getStatus();
+		// clientz = dev.getClientz();
+		// ip = dev.getLanIp();
+
+		// fw_ver = devInfo.getFwVer();
+
+		return this;
+	}
+
+	public Json_Devices parseDevOnlineObject(DevOnlineObject devOnline)
+	{
+		/* model name */
+		/* model code */
+		/* tag list */
+
+		/* cache data below */
+		// usage = devInfo.getDtx() + devInfo.getDrx();
+		// status = devInfo.getStatus();
+		// clientz = dev.getClientz();
+		// ip = dev.getLanIp();
+
+		fw_ver = devOnline.getFw_ver();
+		mv = devOnline.getModel();
+		product_name = devOnline.getProduct_name();
+		// product_name = 
+
+		return this;
+	}
+
+	public String getMv() {
+		return mv;
+	}
+
+	public void setMv(String mv) {
+		this.mv = mv;
+	}
+
+	public String getModel() {
+		return model;
+	}
+
+	public void setModel(String model) {
+		this.model = model;
+	}
+
+	public String getSn() {
+		return sn;
+	}
+
+	public void setSn(String sn) {
+		this.sn = sn;
+	}
+
+	public ArrayList<String> getPeer_ids() {
+		return peer_ids;
+	}
+
+	public void setPeer_ids(ArrayList<String> peer_ids) {
+		this.peer_ids = peer_ids;
+	}
+
+	public Integer getId() {
+		return id;
+	}
+
+	public void setId(Integer id) {
+		this.id = id;
+	}
+
+	public Integer getNetwork_id() {
+		return network_id;
+	}
+
+	public void setNetwork_id(Integer network_id) {
+		this.network_id = network_id;
+	}
+
+	public String getNetwork_name() {
+		return network_name;
+	}
+
+	public void setNetwork_name(String network_name) {
+		this.network_name = network_name;
+	}
+
+	public String getProduct_name() {
+		return product_name;
+	}
+
+	public void setProduct_name(String product_name) {
+		this.product_name = product_name;
+	}
+	
+	public String getProduct_code() {
+		return product_code;
+	}
+
+	public void setProduct_code(String product_code) {
+		this.product_code = product_code;
+	}
+	
+	public String getProduct_type() {
+		return product_type;
+	}
+
+	public void setProduct_type(String product_type) {
+		this.product_type = product_type;
+	}
+
+	public String getLan_mac() {
+		return lan_mac;
+	}
+
+	public void setLan_mac(String lan_mac) {
+		this.lan_mac = lan_mac;
+	}
+	
+	public Integer getBootflash_active() {
+		return bootflash_active;
+	}
+
+	public void setBootflash_active(Integer bootflash_active) {
+		this.bootflash_active = bootflash_active;
+	}
+
+	public List<String> getBootflashs() {
+		return bootflashs;
+	}
+
+	public void setBootflashs(List<String> bootflashs) {
+		this.bootflashs = bootflashs;
+	}
+
+	public String getModel_name() {
+		return mv;
+	}
+
+	public void setModel_name(String model_name) {
+		this.mv = model_name;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public List<String> getTags() {
+		return tags;
+	}
+
+	public void setTags(List<String> tags) {
+		this.tags = tags;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public float getUsage() {
+		return usage;
+	}
+
+	public void setUsage(float usage) {
+		this.usage = usage;
+	}
+
+	public Integer getClientz() {
+		return clientz;
+	}
+
+	public void setClientz(Integer clientz) {
+		this.clientz = clientz;
+	}
+
+	public String getFw_ver() {
+		return fw_ver;
+	}
+
+	public void setFw_ver(String fw_ver) {
+		this.fw_ver = fw_ver;
+	}
+
+	public String getIp() {
+		return ip;
+	}
+
+	public void setIp(String ip) {
+		this.ip = ip;
+	}
+
+	public List<Json_Device_Interfaces> getInterfaces() {
+		return interfaces;
+	}
+
+	public void setInterfaces(List<Json_Device_Interfaces> interfaces) {
+		this.interfaces = interfaces;
+	}
+
+	public List<Json_Device_Vlan_Interfaces> getVlan_interfaces() {
+		return vlan_interfaces;
+	}
+
+	public void setVlan_interfaces(List<Json_Device_Vlan_Interfaces> vlan_interfaces) {
+		this.vlan_interfaces = vlan_interfaces;
+	}
+
+	public Date getLast_online() {
+		return last_online;
+	}
+
+	public void setLast_online(Date created_at) {
+		this.last_online = created_at;
+	}
+
+	public Date getOffline_at() {
+		return offline_at;
+	}
+
+	public void setOffline_at(Date updated_at) {
+		this.offline_at = updated_at;
+	}
+
+	public Date getFirst_appear() {
+		return first_appear;
+	}
+
+	public void setFirst_appear(Date first_appear) {
+		this.first_appear = first_appear;
+	}
+
+	public Float getLatitude() {
+		return latitude;
+	}
+
+	public Float getLongitude() {
+		return longitude;
+	}
+
+	public Date getExpiry_date() {
+		return expiry_date;
+	}
+
+	public void setExpiry_date(Date expiry_date) {
+		this.expiry_date = expiry_date;
+	}
+
+	public Date getSub_expiry_date() {
+		return sub_expiry_date;
+	}
+
+	public void setSub_expiry_date(Date sub_expiry_date) {
+		this.sub_expiry_date = sub_expiry_date;
+	}
+
+	public Date getConfig_updated_at() {
+		return config_updated_at;
+	}
+
+	public void setConfig_updated_at(Date config_updated_at) {
+		this.config_updated_at = config_updated_at;
+	}
+
+	public Integer getSupport_ssid_count() {
+		return support_ssid_count;
+	}
+
+	public void setSupport_ssid_count(Integer support_ssid_count) {
+		this.support_ssid_count = support_ssid_count;
+	}
+
+	public String getFeatures() {
+		return features;
+	}
+
+	public void setFeatures(String features) {
+		this.features = features;
+	}
+
+	public String getAddress() {
+		return address;
+	}
+
+	public void setAddress(String address) {
+		this.address = address;
+	}
+
+	public String getDev_level_cfg() {
+		return dev_level_cfg;
+	}
+
+	public void setDev_level_cfg(String dev_level_cfg) {
+		this.dev_level_cfg = dev_level_cfg;
+	}
+
+	public List<RadioMode> getRadio_modules() {
+		return radio_modules;
+	}
+
+	public void setRadio_modules(List<RadioMode> radio_modules) {
+		this.radio_modules = radio_modules;
+	}
+
+	public List<SsidProfiles> getSsid_profiles() {
+		return ssid_profiles;
+	}
+
+	public void setSsid_profiles(List<SsidProfiles> ssid_profiles) {
+		this.ssid_profiles = ssid_profiles;
+	}
+
+	public String getNetwork_type() {
+		return network_type;
+	}
+
+	public void setNetwork_type(String network_type) {
+		this.network_type = network_type;
+	}
+
+	public String getDevice_type() {
+		return device_type;
+	}
+
+	public void setDevice_type(String device_type) {
+		this.device_type = device_type;
+	}
+
+	public String getV6_license() {
+		return v6_license;
+	}
+
+	public void setV6_license(String v6_license) {
+		this.v6_license = v6_license;
+	}
+
+	public String getVersion() {
+		return version;
+	}
+
+	public void setVersion(String version) {
+		this.version = version;
+	}
+
+	public Long getUptime() {
+		return uptime;
+	}
+
+	public void setUptime(Long uptime) {
+		this.uptime = uptime;
+	}
+
+	public Date getUptime_appear() {
+		return uptime_appear;
+	}
+
+	public void setUptime_appear(Date uptime_appear) {
+		this.uptime_appear = uptime_appear;
+	}
+
+	public String getFw_pending_ver() {
+		return fw_pending_ver;
+	}
+
+	public void setFw_pending_ver(String fw_pending_ver) {
+		this.fw_pending_ver = fw_pending_ver;
+	}
+
+	public Date getFw_pending_schedule_time() {
+		return fw_pending_schedule_time;
+	}
+
+	public void setFw_pending_schedule_time(Date fw_pending_schedule_time) {
+		this.fw_pending_schedule_time = fw_pending_schedule_time;
+	}
+
+	public Date getFw_pending_upgrade_time() {
+		return fw_pending_upgrade_time;
+	}
+
+	public void setFw_pending_upgrade_time(Date fw_pending_upgrade_time) {
+		this.fw_pending_upgrade_time = fw_pending_upgrade_time;
+	}
+
+	public Integer getFw_pending_status() {
+		return fw_pending_status;
+	}
+
+	public void setFw_pending_status(Integer fw_pending_status) {
+		this.fw_pending_status = fw_pending_status;
+	}
+
+	public Date getFw_pending_network_time() {
+		return fw_pending_network_time;
+	}
+
+	public void setFw_pending_network_time(Date fw_pending_network_time) {
+		this.fw_pending_network_time = fw_pending_network_time;
+	}
+
+	public String getWifi_cfg() {
+		return wifi_cfg;
+	}
+
+	public void setWifi_cfg(String wifi_cfg) {
+		this.wifi_cfg = wifi_cfg;
+	}
+
+	public Date getConfig_lastput() {
+		return config_lastput;
+	}
+
+	public void setConfig_lastput(Date config_lastput) {
+		this.config_lastput = config_lastput;
+	}
+
+	public String getNetwork_time() {
+		return network_time;
+	}
+
+	public void setNetwork_time(String network_time) {
+		this.network_time = network_time;
+	}
+
+	public String getDevice_ip() {
+		return device_ip;
+	}
+
+	public void setDevice_ip(String device_ip) {
+		this.device_ip = device_ip;
+	}
+
+	public String getHost_ip() {
+		return host_ip;
+	}
+
+	public void setHost_ip(String host_ip) {
+		this.host_ip = host_ip;
+	}
+
+	public Integer getPort() {
+		return port;
+	}
+
+	public void setPort(Integer port) {
+		this.port = port;
+	}
+
+	public Boolean getUse_ssl() {
+		return use_ssl;
+	}
+
+	public void setUse_ssl(Boolean use_ssl) {
+		this.use_ssl = use_ssl;
+	}
+
+	public boolean isExpiredSub() {
+		return sub_expired;
+	}
+
+	public void setExpiredSub(boolean isExpiredSub) {
+		this.sub_expired = isExpiredSub;
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append("Json_Devices [id=");
+		builder.append(id);
+		builder.append(", network_id=");
+		builder.append(network_id);
+		builder.append(", network_name=");
+		builder.append(network_name);
+		builder.append(", iana_id=");
+		builder.append(iana_id);
+		builder.append(", sn=");
+		builder.append(sn);
+		builder.append(", peer_ids=");
+		builder.append(peer_ids);
+		builder.append(", name=");
+		builder.append(name);
+		builder.append(", status=");
+		builder.append(status);
+		builder.append(", usage=");
+		builder.append(usage);
+		builder.append(", product_id=");
+		builder.append(product_id);
+		builder.append(", clientz=");
+		builder.append(clientz);
+		builder.append(", fw_ver=");
+		builder.append(fw_ver);
+		builder.append(", ip=");
+		builder.append(ip);
+		builder.append(", last_online=");
+		builder.append(last_online);
+		builder.append(", offline_at=");
+		builder.append(offline_at);
+		builder.append(", first_appear=");
+		builder.append(first_appear);
+		builder.append(", lan_mac=");
+		builder.append(lan_mac);
+		builder.append(", bootflash_active=");
+		builder.append(bootflash_active);
+		builder.append(", bootflashs=");
+		builder.append(bootflashs);
+		builder.append(", device_ip=");
+		builder.append(device_ip);
+		builder.append(", host_ip=");
+		builder.append(host_ip);
+		builder.append(", port=");
+		builder.append(port);
+		builder.append(", use_ssl=");
+		builder.append(use_ssl);
+		builder.append(", interfaces=");
+		builder.append(interfaces);
+		builder.append(", vlan_interfaces=");
+		builder.append(vlan_interfaces);
+		builder.append(", product_name=");
+		builder.append(product_name);
+		builder.append(", product_code=");
+		builder.append(product_code);
+		builder.append(", product_type=");
+		builder.append(product_type);
+		builder.append(", model=");
+		builder.append(model);
+		builder.append(", mv=");
+		builder.append(mv);
+		builder.append(", tags=");
+		builder.append(tags);
+		builder.append(", latitude=");
+		builder.append(latitude);
+		builder.append(", longitude=");
+		builder.append(longitude);
+		builder.append(", address=");
+		builder.append(address);
+		builder.append(", location_timestamp=");
+		builder.append(location_timestamp);
+		builder.append(", isStatic=");
+		builder.append(isStatic);
+		builder.append(", expiry_date=");
+		builder.append(expiry_date);
+		builder.append(", sub_expiry_date=");
+		builder.append(sub_expiry_date);
+		builder.append(", locations=");
+		builder.append(locations);
+		builder.append(", point=");
+		builder.append(point);
+		builder.append(", type=");
+		builder.append(type);
+		builder.append(", expired=");
+		builder.append(expired);
+		builder.append(", config_updated_at=");
+		builder.append(config_updated_at);
+		builder.append(", support_ssid_count=");
+		builder.append(support_ssid_count);
+		builder.append(", features=");
+		builder.append(features);
+		builder.append(", dev_level_cfg=");
+		builder.append(dev_level_cfg);
+		builder.append(", radio_modules=");
+		builder.append(radio_modules);
+		builder.append(", ssid_profiles=");
+		builder.append(ssid_profiles);
+		builder.append(", network_type=");
+		builder.append(network_type);
+		builder.append(", device_type=");
+		builder.append(device_type);
+		builder.append(", v6_license=");
+		builder.append(v6_license);
+		builder.append(", last_sync_date=");
+		builder.append(last_sync_date);
+		builder.append(", version=");
+		builder.append(version);
+		builder.append(", uptime=");
+		builder.append(uptime);
+		builder.append(", uptime_appear=");
+		builder.append(uptime_appear);
+		builder.append(", fw_pending_trial_round=");
+		builder.append(fw_pending_trial_round);
+		builder.append(", fw_pending_max_no_of_trial=");
+		builder.append(fw_pending_max_no_of_trial);
+		builder.append(", fw_pending_ver=");
+		builder.append(fw_pending_ver);
+		builder.append(", fw_pending_schedule_time=");
+		builder.append(fw_pending_schedule_time);
+		builder.append(", fw_pending_upgrade_time=");
+		builder.append(fw_pending_upgrade_time);
+		builder.append(", fw_pending_status=");
+		builder.append(fw_pending_status);
+		builder.append(", fw_pending_network_time=");
+		builder.append(fw_pending_network_time);
+		builder.append(", network_time=");
+		builder.append(network_time);
+		builder.append(", is_master_device=");
+		builder.append(is_master_device);
+		builder.append(", wifi_cfg=");
+		builder.append(wifi_cfg);
+		builder.append(", config_lastput=");
+		builder.append(config_lastput);
+		builder.append(", ddns_enabled=");
+		builder.append(ddns_enabled);
+		builder.append(", ddns_names=");
+		builder.append(ddns_names);
+		builder.append(", onlineStatus=");
+		builder.append(onlineStatus);
+		builder.append(", sub_expired=");
+		builder.append(sub_expired);
+		builder.append(", wtp_ip=");
+		builder.append(wtp_ip);
+		builder.append(", licenseUpdateInfo=");
+		builder.append(licenseUpdateInfo);
+		builder.append(", adminConf=");
+		builder.append(adminConf);
+		builder.append("]");
+		return builder.toString();
+	}
+
+}

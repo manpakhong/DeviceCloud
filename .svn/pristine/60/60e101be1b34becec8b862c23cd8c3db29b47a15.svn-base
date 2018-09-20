@@ -1,0 +1,28 @@
+package com.littlecloud.control.dao;
+
+// Generated Apr 15, 2013 12:32:59 PM by Hibernate Tools 4.0.0
+
+import java.sql.SQLException;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.entity.report.DeviceGpsRecordsId;
+import com.littlecloud.control.entity.report.DeviceGpsRecords;
+
+public class DeviceGpsRecordsDAO extends BaseDAO<DeviceGpsRecords, DeviceGpsRecordsId> {
+
+	private static final Logger log = Logger.getLogger(DeviceGpsRecordsDAO.class);
+
+	public DeviceGpsRecordsDAO() throws SQLException {
+		super(DeviceGpsRecords.class);
+	}
+
+	public DeviceGpsRecordsDAO(String orgId) throws SQLException {
+		super(DeviceGpsRecords.class, orgId);
+	}
+
+	public DeviceGpsRecordsDAO(String orgId, boolean readonly) throws SQLException {
+		super(DeviceGpsRecords.class, orgId, readonly);
+	}
+}

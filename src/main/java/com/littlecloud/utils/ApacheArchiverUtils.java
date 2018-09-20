@@ -1,0 +1,214 @@
+package com.littlecloud.utils;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
+import org.apache.commons.compress.utils.IOUtils;
+import org.jboss.logging.Logger;
+
+public class ApacheArchiverUtils {
+	private static final String ARCHIVER_FILE_DESC = "config.txt";
+	private static final Logger log = Logger
+			.getLogger(ApacheArchiverUtils.class);
+
+	public InputStream compress2TarGZ(File sourceFile) throws IOException {
+		GzipCompressorOutputStream gzOut = null;
+		TarArchiveOutputStream tOut = null;
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		InputStream inputStream = null;
+		try {
+			gzOut = new GzipCompressorOutputStream(baos);
+			tOut = new TarArchiveOutputStream(gzOut);
+			String dirPath = sourceFile.getAbsolutePath();
+			addFileToTarGz(tOut, dirPath, "");
+			inputStream = new ByteArrayInputStream(baos.toByteArray());
+		} catch (Exception e) {
+			log.errorf(e, "CRYPTO20140313 - compress2TarGZ ");
+		} finally {
+			tOut.finish();
+			tOut.close();
+			gzOut.close();
+
+		}
+		return inputStream;
+	}
+
+	public void compress2TarGZ(File sourceFile, File destFile)
+			throws IOException {
+		FileOutputStream fOut = null;
+		BufferedOutputStream bOut = null;
+		GzipCompressorOutputStream gzOut = null;
+		TarArchiveOutputStream tOut = null;
+		try {
+//			System.out.println(new File(".").getAbsolutePath());
+			String dirPath = sourceFile.getAbsolutePath();
+			String tarGzPath = destFile.getAbsolutePath();
+			fOut = new FileOutputStream(new File(tarGzPath));
+			bOut = new BufferedOutputStream(fOut);
+			gzOut = new GzipCompressorOutputStream(bOut);
+			tOut = new TarArchiveOutputStream(gzOut);
+			addFileToTarGz(tOut, dirPath, "");
+		} catch (Exception e) {
+			log.errorf(e, "CRYPTO20140313 - compress2TarGZ ");
+		} finally {
+			tOut.finish();
+			tOut.close();
+			gzOut.close();
+			bOut.close();
+			fOut.close();
+		}
+	}
+
+	private void addFileToTarGz2(TarArchiveOutputStream tOut, File sourceFile) {
+		try {
+
+			
+			TarArchiveEntry tarEntry = new TarArchiveEntry(sourceFile, sourceFile.getName());
+			
+//			tarEntry.setMode(TarArchiveEntry.DEFAULT_FILE_MODE);
+////			tarEntry.setLinkName(TarArchiveEntry.LF_NORMAL);
+//			tarEntry.setSize(1024);
+//			tarEntry.setName("test");
+			IOUtils.copy(new FileInputStream(sourceFile), tOut);
+			tOut.putArchiveEntry(tarEntry);
+
+			tOut.closeArchiveEntry();
+		} catch (Exception e) {
+			log.errorf(e, "CRYPTO20140313 - extractTgzFile ");
+		}
+	}
+
+	private void addFileToTarGz(TarArchiveOutputStream tOut, String path,
+			String base) throws IOException {
+		File f = new File(path);
+//		System.out.println(f.exists());
+		String entryName = base + f.getName();
+		TarArchiveEntry tarEntry = new TarArchiveEntry(f, entryName);
+		tOut.putArchiveEntry(tarEntry);
+
+		if (f.isFile()) {
+			IOUtils.copy(new FileInputStream(f), tOut);
+			tOut.closeArchiveEntry();
+		} else {
+			tOut.closeArchiveEntry();
+			File[] children = f.listFiles();
+			if (children != null) {
+				for (File child : children) {
+//					System.out.println(child.getName());
+					addFileToTarGz(tOut, child.getAbsolutePath(), entryName
+							+ "/");
+				}
+			}
+		}
+	}
+
+	public void extractTgzFile(InputStream inputStream, File destFile) {
+		try {
+			if (inputStream != null && destFile != null) {
+				// FileInputStream fin = inputStream;
+				BufferedInputStream buffIn = new BufferedInputStream(
+						inputStream);
+				GzipCompressorInputStream gzipIn = new GzipCompressorInputStream(
+						buffIn);
+				TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn);
+
+				TarArchiveEntry tarEntry = (TarArchiveEntry) tarIn
+						.getNextEntry();
+
+				while (tarEntry != null) {// create a file with the same name as
+											// the tarEntry
+					File destPath = new File(destFile, tarEntry.getName());
+//					System.out.println("working: "
+//							+ destPath.getCanonicalPath());
+					if (tarEntry.isDirectory()) {
+						destPath.mkdirs();
+					} else {
+						destPath.createNewFile();
+						// byte [] btoRead = new byte[(int)tarEntry.getSize()];
+						byte[] btoRead = new byte[1024];
+						// FileInputStream fin
+						// = new FileInputStream(destPath.getCanonicalPath());
+						BufferedOutputStream bout = new BufferedOutputStream(
+								new FileOutputStream(destPath));
+						int len = 0;
+
+						while ((len = tarIn.read(btoRead)) != -1) {
+							bout.write(btoRead, 0, len);
+						}
+						bout.close();
+						btoRead = null;
+					}
+					tarEntry = tarIn.getNextTarEntry();
+				}
+				tarIn.close();
+
+			} else {
+				throw new Exception(
+						"Source File or Destinated File must be specified.");
+			}
+		} catch (Exception e) {
+			log.error("CRYPTO20140313 - extractTgzFile ", e);
+		}
+	}
+
+	public void extractTgzFile(File sourceFile, File destFile) {
+		try {
+			if (sourceFile != null && destFile != null) {
+				FileInputStream fin = new FileInputStream(sourceFile);
+				BufferedInputStream buffIn = new BufferedInputStream(fin);
+				GzipCompressorInputStream gzipIn = new GzipCompressorInputStream(
+						buffIn);
+				TarArchiveInputStream tarIn = new TarArchiveInputStream(gzipIn);
+
+				TarArchiveEntry tarEntry = (TarArchiveEntry) tarIn
+						.getNextEntry();
+
+				while (tarEntry != null) {// create a file with the same name as
+											// the tarEntry
+					File destPath = new File(destFile, tarEntry.getName());
+//					System.out.println("working: "
+//							+ destPath.getCanonicalPath());
+					if (tarEntry.isDirectory()) {
+						destPath.mkdirs();
+					} else {
+						destPath.createNewFile();
+						// byte [] btoRead = new byte[(int)tarEntry.getSize()];
+						byte[] btoRead = new byte[1024];
+						// FileInputStream fin
+						// = new FileInputStream(destPath.getCanonicalPath());
+						BufferedOutputStream bout = new BufferedOutputStream(
+								new FileOutputStream(destPath));
+						int len = 0;
+
+						while ((len = tarIn.read(btoRead)) != -1) {
+							bout.write(btoRead, 0, len);
+						}
+						bout.close();
+						btoRead = null;
+					}
+					tarEntry = tarIn.getNextTarEntry();
+				}
+				tarIn.close();
+
+			} else {
+				throw new Exception(
+						"Source File or Destinated File must be specified.");
+			}
+		} catch (Exception e) {
+			log.error("CRYPTO20140313 - extractTgzFile ", e);
+		}
+	}
+}

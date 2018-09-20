@@ -1,0 +1,107 @@
+package com.littlecloud.control.json.model.config;
+
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class JsonConf_Admin extends JsonConf {
+
+	//private static final Logger log = Logger.getLogger(JsonConf_AdminRadius.class);
+
+	public static final List<String> FULL_CONFIG_KEY = initFULL_CONFIG_KEY();
+		
+	public static enum ADMIN_AUTHEN {
+		device_managed, random_passwd
+	}
+	
+	@ConfigValue(name = "ADMIN_RADIUS_ENABLE", valueMap = "true=yes|false=${setnull}") 
+	private boolean radius_enable;
+
+	private boolean managed;
+	private ADMIN_AUTHEN admin_auth;
+	private transient boolean admin_pass_generate;
+	
+	private boolean user_pass_enable;
+	private transient boolean user_pass_generate;
+	
+	public String generateHardwareConfig(Class cls, CONFIG_TYPE configType) throws Exception
+	{
+		ConcurrentHashMap<Integer, String> confJsonMap = new ConcurrentHashMap<Integer, String>();
+		if (traverseConfig(confJsonMap, "", this, cls, GLOBAL_DEV_INDEX, configType))
+		{
+			return confJsonMap.get(GLOBAL_DEV_INDEX);
+		}
+		return null;
+	}
+
+	private static List<String> initFULL_CONFIG_KEY() {
+		List<String> result = new ArrayList<String>();
+		
+		for (Field f : JsonConf_Admin.class.getDeclaredFields()) {
+			ConfigValue value = f.getAnnotation(ConfigValue.class);
+			if (value!=null)
+				result.add(value.name());
+		}
+		return result;
+	}
+
+	
+	/*** getters and setters ***/
+	public boolean isManaged() {
+		return managed;
+	}
+
+	public void setManaged(boolean managed) {
+		this.managed = managed;
+	}
+
+	public ADMIN_AUTHEN getAdmin_auth() {
+		return admin_auth;
+	}
+
+	public void setAdmin_auth(ADMIN_AUTHEN admin_auth) {
+		this.admin_auth = admin_auth;
+	}
+
+	public boolean isAdmin_pass_generate() {
+		return admin_pass_generate;
+	}
+
+	public void setAdmin_pass_generate(boolean admin_pass_generate) {
+		this.admin_pass_generate = admin_pass_generate;
+	}
+
+	public boolean isUser_pass_enable() {
+		return user_pass_enable;
+	}
+
+	public void setUser_pass_enable(boolean user_pass_enable) {
+		this.user_pass_enable = user_pass_enable;
+	}
+
+	public boolean isUser_pass_generate() {
+		return user_pass_generate;
+	}
+
+	public void setUser_pass_generate(boolean user_pass_generate) {
+		this.user_pass_generate = user_pass_generate;
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append("JsonConf_Admin [managed=");
+		builder.append(managed);
+		builder.append(", admin_auth=");
+		builder.append(admin_auth);
+		builder.append(", admin_pass_generate=");
+		builder.append(admin_pass_generate);
+		builder.append(", user_pass_enable=");
+		builder.append(user_pass_enable);
+		builder.append(", user_pass_generate=");
+		builder.append(user_pass_generate);
+		builder.append("]");
+		return builder.toString();
+	}
+}

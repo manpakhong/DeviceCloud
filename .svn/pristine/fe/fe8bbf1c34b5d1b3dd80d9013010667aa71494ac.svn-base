@@ -1,0 +1,14 @@
+.alinkCaptivePortal{
+}
+.captivePortalDialog{
+	background-color: Bisque;
+}
+.dateClass{
+	width: 123px;
+}
+.timeClass{
+	width: 45px;
+}
+.dataClass2{
+	width: 300px;
+}

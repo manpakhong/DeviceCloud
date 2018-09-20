@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE struts PUBLIC
+        "-//Apache Software Foundation//DTD Struts Configuration 2.0//EN"
+        "http://struts.apache.org/dtds/struts-2.0.dtd">
+
+<struts>
+
+    <package name="monitor" namespace="/monitor" extends="default">
+		<result-types>
+		 	<result-type name="getAllMessageTypeResult" class="com.littlecloud.controllers.results.GetAllMessageTypeResult" />
+		 	<result-type name="getAllMessageTextFileResult" class="com.littlecloud.controllers.results.GetMessageTextFileResult" />
+		 	<result-type name="doFifoReplayResult" class="com.littlecloud.controllers.results.DoFifoReplayResult" />		 	
+		 	<result-type name="checkPasswordCorrectResult" class="com.littlecloud.controllers.results.CheckPasswordCorrectResult" />	
+		</result-types>
+		
+		<action name="loadBalance" class="com.littlecloud.pool.MonitorAction" method="loadBalance">
+            <result>/blank.jsp</result>
+            <result name="SUCCESS">/index.jsp</result>
+            <result name="ERROR">/error.jsp</result>
+        </action>
+
+        <action name="cluster" class="com.littlecloud.pool.MonitorAction" method="monitorServer">
+            <result>/blank.jsp</result>
+            <param name="bLoadBalance">false</param>
+        </action>
+        
+        <action name="cache" class="com.littlecloud.pool.MonitorAction" method="monitorCache">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="evictCache" class="com.littlecloud.pool.MonitorAction" method="evictAllCache">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="deleteCache" class="com.littlecloud.pool.MonitorAction" method="deleteCache">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="reloadCache" class="com.littlecloud.pool.MonitorAction" method="reloadCache">
+        	<result>/blank.jsp</result>
+        </action>
+        
+        <action name="updateDevOnlineObject" class="com.littlecloud.pool.MonitorAction" method="updateDevOnlineObject">
+        	<result>/blank.jsp</result>
+        </action>
+        
+        <action name="clearCache" class="com.littlecloud.pool.MonitorAction" method="clearCache">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="forceGc" class="com.littlecloud.pool.MonitorAction" method="forceGc">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="test" class="com.littlecloud.pool.MonitorAction" method="test">
+            <result>/blank.jsp</result>
+        </action>
+                
+        <action name="queue" class="com.littlecloud.pool.MonitorAction" method="monitorQueue">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="printqueue" class="com.littlecloud.pool.MonitorAction" method="printQueue">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="clearqueue" class="com.littlecloud.pool.MonitorAction" method="clearQueue">
+            <result>/blank.jsp</result>
+        </action>
+        
+        <action name="db" class="com.littlecloud.pool.MonitorAction" method="monitorDbPool">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="threadpool" class="com.littlecloud.pool.MonitorAction" method="monitorThreadPool">
+            <result>/blank.jsp</result>
+        </action>        
+        <action name="wtp" class="com.littlecloud.pool.MonitorAction" method="monitorWtpPool">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="branchRedirect" class="com.littlecloud.pool.MonitorAction" method="monitorBranchRedirection">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="wtpinfo" class="com.littlecloud.pool.MonitorAction" method="monitorWtpInfo">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="consolidate" class="com.littlecloud.pool.MonitorAction" method="monitorConsolidate">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="dbInsert" class="com.littlecloud.pool.MonitorAction" method="monitorDbInsert">
+            <result>/blank.jsp</result>
+        </action>
+
+        
+        <action name="fiforeplay" class="com.littlecloud.controllers.FifoReplayMonitorController" method="distributeActions">
+		   <result name="getAllMessageTypeResult" type="getAllMessageTypeResult">
+		   </result>
+        </action>
+        <action name="fiforeplay_gettext" class="com.littlecloud.controllers.FifoReplayMonitorController" method="distributeActions">
+		   <result name="getAllMessageTextFileResult" type="getAllMessageTextFileResult">
+		   </result>
+        </action>
+        <action name="fiforeplay_do" class="com.littlecloud.controllers.FifoReplayMonitorController" method="distributeActions">
+		   <result name="doFifoReplayResult" type="doFifoReplayResult">
+		   </result>
+        </action>
+        <action name="password_check" class="com.littlecloud.controllers.CommonMonitorController" method="distributeActions">
+		   <result name="checkPasswordCorrectResult" type="checkPasswordCorrectResult">
+		   </result>
+        </action>        
+    </package>
+</struts>

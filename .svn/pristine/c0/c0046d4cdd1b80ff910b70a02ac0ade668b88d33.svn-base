@@ -1,0 +1,287 @@
+package com.littlecloud.util;
+
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.json.util.DateUtils;
+
+public class CryptoUtils {
+	private final static String tmpDir = "/temp/";
+	private static final Logger log = Logger.getLogger(CryptoUtils.class);
+	public static final int PEPLINK_KEY = 0x32;
+		
+	public static void plainTextConfigFile2DeviceXorFile2(File sourceFile, File destDir, File destFile){
+		try{
+			if (sourceFile != null && destDir != null && destFile != null){
+				
+				File tempDir = new File(tmpDir);
+				if (!tempDir.exists()){
+					tempDir.mkdir();
+				}
+				
+				if (!destDir.exists()){
+					destDir.mkdir();
+				}
+
+				InputStream inStream = new FileInputStream(sourceFile.getAbsolutePath());
+				ApacheArchiverUtils archiverUtils= new ApacheArchiverUtils();
+				InputStream tarGzInputStream = archiverUtils.compress2TarGZ(sourceFile);		
+				
+				if (tarGzInputStream != null){
+					String fileTmpGzStr = CryptoUtils.xorFromFile(tarGzInputStream);
+					CryptoUtils.string2File(fileTmpGzStr, destFile.getCanonicalPath());
+				}
+
+			} else{
+				throw new Exception("Source File or Destinated File must be specified.");
+			}
+		}catch (Exception e){
+			log.error("CRYPTO20140313 - string2File ", e);
+		}
+	}
+	
+
+	public static void deviceConfigFile2PlainText2(File sourceFile, File destinateDir){
+		try{
+			if (sourceFile != null && destinateDir != null){
+				String cryptoResultFromCProgram = CryptoUtils.xorFromFile(sourceFile.getAbsolutePath());
+				
+				File tempDir = new File(tmpDir);
+				if (!tempDir.exists()){
+					tempDir.mkdir();
+				}
+				
+				if (!destinateDir.exists()){
+					destinateDir.mkdir();
+				}
+							
+				InputStream inputStream = CryptoUtils.string2InputStream(cryptoResultFromCProgram);
+				
+				if (inputStream != null){
+					ApacheArchiverUtils archiverUtils = new ApacheArchiverUtils();
+					archiverUtils.extractTgzFile(inputStream, destinateDir);
+				}
+			} else{
+				throw new Exception("Source File or Destinated File must be specified.");
+			}
+		}catch (Exception e){
+			log.error("CRYPTO20140313 - string2File ", e);
+		}
+	}
+	
+	public static void plainTextConfigFile2DeviceXorFile(File sourceFile, File destDir, File destFile){
+		try{
+			if (sourceFile != null && destDir != null && destFile != null){
+				
+				File tempDir = new File(tmpDir);
+				if (!tempDir.exists()){
+					tempDir.mkdir();
+				}
+				
+				if (!destDir.exists()){
+					destDir.mkdir();
+				}
+
+				File fileTmpTar = new File(tempDir.getCanonicalPath() + "/encodTmp" + DateUtils.getUnixtime() + ".tar");
+				
+				ArchiverUtils archiverUtils= new ArchiverUtils();
+				archiverUtils.archive2TarFile(sourceFile, fileTmpTar);
+				
+				File fileTmpGz = new File(tempDir.getCanonicalPath() + "/encodTmp" + DateUtils.getUnixtime() + ".tar.gz");
+				if (fileTmpTar.exists()){
+					archiverUtils.archive2GzFile(fileTmpTar, fileTmpGz);		
+					
+					if (fileTmpGz.exists()){
+						String fileTmpGzStr = CryptoUtils.xorFromFile(fileTmpGz.getAbsolutePath());
+						CryptoUtils.string2File(fileTmpGzStr, destFile.getCanonicalPath());
+					}
+				}
+			} else{
+				throw new Exception("Source File or Destinated File must be specified.");
+			}
+		}catch (Exception e){
+			log.error("CRYPTO20140313 - string2File ", e);
+		}
+	}
+	
+	public static void deviceConfigFile2PlainText(File sourceFile, File destinateDir){
+		try{
+			if (sourceFile != null && destinateDir != null){
+				String cryptoResultFromCProgram = CryptoUtils.xorFromFile(sourceFile.getAbsolutePath());
+				
+				File tempDir = new File(tmpDir);
+				if (!tempDir.exists()){
+					tempDir.mkdir();
+				}
+				
+				if (!destinateDir.exists()){
+					destinateDir.mkdir();
+				}
+							
+				File fileTmp = new File(tempDir.getCanonicalPath() + "/decodeTmp" + DateUtils.getUnixtime() + ".tgz");
+				
+				if (!fileTmp.exists()){
+					fileTmp.createNewFile();
+				}
+
+				CryptoUtils.string2File(cryptoResultFromCProgram, fileTmp.getCanonicalPath());
+				
+				if (fileTmp.exists()){
+					ApacheArchiverUtils archiverUtils = new ApacheArchiverUtils();
+					archiverUtils.extractTgzFile(fileTmp, destinateDir);
+				} else{
+					throw new Exception("Config file decode error!");
+				}
+			} else{
+				throw new Exception("Source File or Destinated File must be specified.");
+			}
+		}catch (Exception e){
+			log.error("CRYPTO20140313 - string2File ", e);
+		}
+	}
+	
+	private static InputStream string2InputStream(String str){
+		ByteArrayInputStream inputStream = null;
+		try{
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			char [] charArray = str.toCharArray();
+			for (int i = 0; i < charArray.length; i++){
+				baos.write(toAscii(charArray[i]));
+			}
+			inputStream = new ByteArrayInputStream(baos.toByteArray());
+		} catch (Exception e){
+			log.error("CRYPTO20140313 - string2InputStream ", e);
+		}
+		return inputStream;
+	}
+	
+	private static void string2File(String str, String file2Write){
+		FileOutputStream writer = null;
+		try{
+			if (file2Write != null && !file2Write.isEmpty()){
+				writer = new FileOutputStream (file2Write);
+				
+				char [] charArray = str.toCharArray();
+				
+				for (int i = 0; i < charArray.length; i++){
+					writer.write(toAscii(charArray[i]));
+				}
+			}
+		}catch (Exception e){
+			log.error("CRYPTO20140313 - string2File ", e);
+		} finally {
+            try {
+                if (writer != null){
+                	writer.close();
+                }
+            } catch (Exception e) {
+    			log.error("CRYPTO20140313 - string2File ", e);
+            }
+        }
+	}
+	
+	public static String xorFromFile(InputStream inStream){
+		String fromFile = readFromInputStreamCharByChar(inStream);
+		String xorResult = xor(fromFile);
+		return xorResult;
+	}
+	
+	public static String xorFromFile(String filePath){
+		String fromFile = readFromFileCharByChar(filePath);
+		String xorResult = xor(fromFile);
+		return xorResult;
+	}
+	
+	public static String readFromInputStreamCharByChar(InputStream inStream){
+		String result = "";
+		try{
+			if (inStream != null){
+				int c;
+				while ((c = inStream.read()) != -1) {
+					if (result.isEmpty()){
+						result = Character.toString(CryptoUtils.toChar(c));
+					} else {
+						result += Character.toString(CryptoUtils.toChar(c));
+					}
+				}
+			}
+		}catch (Exception e){
+			log.error("CRYPTO20140313 - readFromInputStreamCharByChar ", e);
+		}finally {
+            try {
+                if (inStream != null){
+                	inStream.close();
+                }
+            } catch (Exception e) {
+    			log.error("CRYPTO20140313 - readFromInputStreamCharByChar ", e);
+            }
+        }
+		return result;
+	}
+	
+	public static String readFromFileCharByChar(String filePath){
+		String result = "";
+		FileInputStream readerXorText = null;
+		try{
+			if (filePath != null && !filePath.isEmpty()){
+				readerXorText = new FileInputStream(filePath);
+				int c;
+				while ((c = readerXorText.read()) != -1) {
+					if (result.isEmpty()){
+						result = Character.toString(CryptoUtils.toChar(c));
+					} else {
+						result += Character.toString(CryptoUtils.toChar(c));
+					}
+				}
+			}
+		}catch (Exception e){
+			log.error("CRYPTO20140313 - readFromFileCharByChar ", e);
+		}finally {
+            try {
+                if (readerXorText != null){
+                	readerXorText.close();
+                }
+            } catch (Exception e) {
+    			log.error("CRYPTO20140313 - readFromFileCharByChar ", e);
+            }
+        }
+		return result;
+	}
+	
+	public static String xor(String str2Xor){
+		char [] charArray = str2Xor.toCharArray();
+		char [] xorCharArray = new char[charArray.length];
+		String xorString = null;
+		
+		for (int i = 0; i < charArray.length; i++){
+			xorCharArray[i] = xor (charArray[i]);
+		}
+		xorString = new String(xorCharArray);
+		return xorString;
+	}
+	
+	private static char xor (char chr2Xor){
+		char resultChar;
+		int ascii = toAscii(chr2Xor);		
+		int result = ascii ^ PEPLINK_KEY;
+		resultChar = toChar(result);		
+		return resultChar;
+	}
+	
+	private static int toAscii(char c) {
+		return (int) c;
+	}
+
+	private static char toChar(int ascii) {
+		return (char) ascii;
+	}
+	
+}

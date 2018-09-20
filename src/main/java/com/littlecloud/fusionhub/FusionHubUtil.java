@@ -1,0 +1,173 @@
+package com.littlecloud.fusionhub;
+
+import net.sf.json.JSONException;
+import net.sf.json.JSONObject;
+
+import org.apache.commons.httpclient.NameValuePair;
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.ACService;
+import com.littlecloud.ac.json.model.command.MessageType;
+import com.littlecloud.ac.json.model.command.QueryInfo;
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.json.util.JsonUtils;
+import com.littlecloud.pool.object.DevOnlineObject;
+import com.littlecloud.pool.object.utils.DeviceUtils;
+import com.littlecloud.pool.utils.HttpCall;
+
+public class FusionHubUtil {
+
+	private static final Logger log = Logger.getLogger(FusionHubUtil.class);
+
+	private static FusionHubProperties fp = FusionHubProperties.getInstance();
+
+	public static boolean handleDefaultSn(QueryInfo<Object> info)
+	{
+		String sn=info.getSn();
+		
+		if(sn==null || !isDefaultSn(sn))
+			return false; // it's not a FusionHub
+		
+		MessageType mt = info.getType();
+		/*** Handle fusion hub ONLINE message ***/		
+		switch (mt) {
+		case PIPE_INFO_TYPE_DEV_ONLINE:
+			try {
+				DevOnlineObject devOFH = DeviceUtils.getDevOnlineObjectFromQueryInfo(info);
+				if (devOFH == null)
+				{
+					log.warnf("FusionHubUtil fail to get online object from queryInfo for FusionHub %s", info);
+					break;
+				}
+				devOFH.setIana_id(info.getIana_id());
+				devOFH.setSn(info.getSn());
+				devOFH.setMachine_id(ACService.getServerName());
+				
+				ACUtil.<DevOnlineObject> cachePoolObjectBySn(devOFH, DevOnlineObject.class);
+			} catch(Exception e) {
+				log.error("FusionHubUtil PIPE_INFO_TYPE_DEV_ONLINE exception", e);
+			}
+			break;
+		case PIPE_INFO_TYPE_EVENT_ACT_FH_LIC:
+			try {
+				JSONObject object = JSONObject.fromObject(info);
+				JSONObject data = object.getJSONObject("data");
+				Json_FusionHubLicenseRequest licReq = JsonUtils.fromJson(data.toString(), Json_FusionHubLicenseRequest.class);
+
+				DevOnlineObject devOFH = new DevOnlineObject();
+				devOFH.setIana_id(info.getIana_id());
+				devOFH.setSn(info.getSn());
+				devOFH.setMachine_id(ACService.getServerName());
+				
+				devOFH = ACUtil.<DevOnlineObject> getPoolObjectBySn(devOFH, DevOnlineObject.class);
+				if (devOFH == null)
+				{
+					log.warnf("FusionHubUtil fail to get online object from cache for FusionHub %s", info);
+					break;
+				}
+				if (info.getSid()==null || info.getSid().isEmpty())
+				{
+					FusionHubUtil.handleVerifyLicReq(info, licReq, devOFH);
+				}
+			} catch (Exception e) {
+				log.error("FusionHubUtil PIPE_INFO_TYPE_EVENT_ACT_FH_LIC exception", e);
+			}
+			break;
+		}
+		return true; // return FusionHub handling completed  
+	}
+	
+	public static boolean isFHDefaultInfo(String sn, String model)
+	{
+		if (sn==null || model==null)
+			return false;
+		
+		log.debugf("Verify Default FH Info (%s, %s)", sn, model);
+		boolean result = fp.FusionHubDefaultModelLst.contains(model) && isDefaultSn(sn);
+		log.info("isFHDefaultInfo = "+result);
+		return result;
+	}
+
+	private static boolean isDefaultSn(String sn)
+	{				
+		for (String defaultSn: fp.FusionHubDefaultSnLst)
+		{			
+			if (sn.length()>defaultSn.length() && defaultSn.compareTo(sn.substring(0, defaultSn.length()))==0)
+				return true;
+		}
+		return false;
+	}
+
+	public static void handleVerifyLicReq(QueryInfo<Object> info, Json_FusionHubLicenseRequest licReq, DevOnlineObject devOnlineObject) {
+		log.debugf("licReq=%s", licReq);
+		
+		if (licReq==null)
+			return;
+
+		NameValuePair[] nvLst = new NameValuePair[4];
+
+		int i = 0;
+		nvLst[i++] = new NameValuePair("hostid", licReq.getHost_id());
+		nvLst[i++] = new NameValuePair("license", licReq.getKey_code());
+		nvLst[i++] = new NameValuePair("sn", licReq.getSn());
+		nvLst[i++] = new NameValuePair("vmid", licReq.getVm_id());
+
+		HttpCall hc = new HttpCall(fp.FusionHubVerifyLicURL, nvLst);
+		
+		JSONObject obj = null;
+		if (hc.getJson()!=null)
+		{
+			try {
+				obj = JSONObject.fromObject(hc.getJson());
+				log.warnf("INFO FusionHub activation return: %s", obj);
+			} catch (JSONException e)
+			{
+				log.error("FHAPI ERROR - JSONException conversion exception", e);
+				return;
+			}
+			
+			ACService.<JSONObject>fetchCommand(MessageType.PIPE_INFO_TYPE_EVENT_ACT_FH_LIC, JsonUtils.genServerRef(), info.getIana_id(), info.getSn(), obj);
+	
+			/* remove online object */
+			if(licReq.getSn()!=null) // skip SN = null
+			{
+				try {
+					if (isDefaultSn(licReq.getSn()))
+					{
+						/* remove when act lic */
+						ACUtil.<DevOnlineObject> removePoolObjectBySn(devOnlineObject, DevOnlineObject.class);
+					}
+					else
+					{
+						/* verify lic, no action */
+					}
+				} catch (InstantiationException | IllegalAccessException e) {
+					log.error("fail to cachePoolObjectBySn", e);
+				}
+			}
+		}
+		else
+		{
+			log.error("FHAPI ERROR - API returns no result");
+		}
+	}
+	
+	public static void main(String[] arg)
+	{
+		String defaultSn = "1824-C792-89C0-";
+		String sn = "1824-C792-89C0-RFL56CP85UFVLBVV";
+		
+		System.out.println("substr = "+sn.substring(0, defaultSn.length()));
+		System.out.println(defaultSn.compareTo(sn.substring(0, defaultSn.length())));
+		
+		//String json = "{\"host_id\":\"501b8bde-95da-472a-4d2d-9d97ea394bbc\",\"id\":57,\"key_code\":\"RFL56CP85UFVLBVV\",\"license_type\":\"EVAL\",\"max_bandwidth\":1024,\"no_of_session\":2,\"organization_id\":\"ReiKgM\",\"period\":60,\"sn\":\"CEAC-BA1A-7641\",\"vm_id\":\"9B6C7A60-C60F-4C1D-A607-0A0CFA2C2D5A\",\"activate_date_epoch\":1381485264,\"expiry_date_epoch\":1386604800,\"purchase_date_epoch\":-1,\"updated_at_epoch\":1381485264,\"created_at_epoch\":1381484887}";		
+		String json = "{\"err\":\"no record found\"}";
+		JSONObject obj = JSONObject.fromObject(json);
+		System.out.println(obj.toString());
+		
+		QueryInfo<JSONObject> info = new QueryInfo<JSONObject>();
+		info.setData(obj);
+		System.out.println(JsonUtils.toJson(info));		
+	}
+
+}

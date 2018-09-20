@@ -1,0 +1,249 @@
+package com.littlecloud.control.dao;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.entity.report.DeviceMonthlyUsages;
+import com.littlecloud.pool.utils.Utils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+import com.peplink.api.db.util.DBUtil;
+
+public class DeviceMonthlyUsagesDAO extends BaseDAO<DeviceMonthlyUsages, Integer>
+{
+	private static final Logger log = Logger.getLogger(DeviceMonthlyUsagesDAO.class);
+
+	public DeviceMonthlyUsagesDAO() throws SQLException 
+	{
+		super(DeviceMonthlyUsages.class);
+	}
+	
+	public DeviceMonthlyUsagesDAO( String orgId ) throws SQLException 
+	{
+		super(DeviceMonthlyUsages.class, orgId);
+	}
+	
+	public DeviceMonthlyUsagesDAO(String orgId, boolean readonly) throws SQLException 
+	{
+		super(DeviceMonthlyUsages.class,orgId, readonly);
+	}
+
+	public boolean saveDeviceMonthlyUsagesList(List<DeviceMonthlyUsages> deviceMonthlyUsageList) throws SQLException{
+		boolean isSave = false;
+		try{
+			DBUtil dbUtil = DBUtil.getInstance();
+			dbUtil.startSession();
+			DBConnection batchConnection = dbUtil.getConnection(false, orgId, false);
+			if (deviceMonthlyUsageList != null && deviceMonthlyUsageList.size() > 0){
+				for (DeviceMonthlyUsages monthlyDeviceUsage: deviceMonthlyUsageList){
+					batchConnection.addBatch(monthlyDeviceUsage);
+				}
+			}
+			batchConnection.commit();
+			batchConnection.close();
+			if(dbUtil.isSessionStarted()){
+				dbUtil.endSession();
+			}
+			isSave = true;
+		}
+		catch(Exception e){
+			log.error("MonthlyDeviceUsagesDAO.saveDeviceMonthlyUsagesList() - Exception: ", e);
+		}
+		finally{
+			if(dbUtil.isSessionStarted()) {
+				dbUtil.endSession();
+			}
+		}
+		return isSave;
+	}
+	
+	public DeviceMonthlyUsages findByNetIdDeviceIdTimeAndWanId(Integer network_id, Integer device_id, Date datetime, Integer wan_id ) throws SQLException{
+		if(log.isDebugEnabled())
+			log.debug("findByNetIdDeviceIdTimeAndWanId> wan_id:"+wan_id+" network_id:" + network_id + " device_id:" + device_id + " datetime:"+ datetime );
+		DBConnection session = getSession();
+		try {
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceMonthlyUsages.class);
+			query.addCriteria("wan_id", com.peplink.api.db.query.Criteria.EQ, wan_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, network_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, device_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("datetime", com.peplink.api.db.query.Criteria.EQ, datetime);
+			
+			return (DeviceMonthlyUsages)query.executeQueryAsSingleObject();
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if (session!=null) session.close();
+		}
+	}
+	
+	public DeviceMonthlyUsages findByNetworkIdDeviceIdTimeAndWanId(Integer network_id, Integer device_id, Date datetime, Integer wan_id ) throws SQLException{
+		if(log.isInfoEnabled())
+			log.info("findByNetworkIdDeviceIdTimeAndWanId> network_id:"+network_id+" wan_id:"+wan_id+" device_id:" + device_id + " datetime:"+ datetime );
+		DBConnection session = getSession();
+		try {
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceMonthlyUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, network_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, device_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("datetime", com.peplink.api.db.query.Criteria.EQ, datetime);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("wan_id", com.peplink.api.db.query.Criteria.EQ, wan_id);
+			
+			return (DeviceMonthlyUsages)query.executeQueryAsSingleObject();
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if (session!=null) session.close();
+		}
+	}
+	
+
+	public List<DeviceMonthlyUsages> getRecordsWithDeviceIdAndWanIdV2(Integer netId,Integer devId, Integer wanId,int now_unixtime ) throws SQLException
+	{
+		List<DeviceMonthlyUsages> result = null;
+		DBConnection session = getSession();
+		if(log.isInfoEnabled())
+			log.info("getRecordsWithDeviceIdAndWanIdV2> network_id:"+netId+" wan_id:"+wanId+" device_id:" + devId + " unixtime:"+ now_unixtime);
+		
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DeviceMonthlyUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, netId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, devId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("wan_id", com.peplink.api.db.query.Criteria.EQ, wanId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", com.peplink.api.db.query.Criteria.LTE, now_unixtime);
+			query.addOrderBy("unixtime desc");
+			result = (List<DeviceMonthlyUsages>)query.executeQueryAsObject();
+		}
+		catch(Exception e)
+		{
+			throw e;
+		} 
+		finally
+		{
+			if( session!=null ) 
+				session.close();
+		}
+		
+		return result;
+	}
+	
+
+	public List<Integer> getDistinctWanIdsWithDeviceId(Integer netId,Integer devId) throws SQLException
+	{
+		List<Integer> result = new ArrayList<Integer>();
+		DBConnection session = getSession();
+		if(log.isInfoEnabled())
+			log.info("getDistinctWanIdsWithDeviceId> netId:" + netId + " device_id:"+devId);
+		ResultSet rs = null;
+		try 
+		{
+			
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			rs = query.executeQuery("select * from "+dbname+".device_monthly_usages where device_id="+devId+" and network_id="+netId+" and wan_id is not null group by wan_id;");
+			result = new ArrayList<Integer>();
+			
+			while (rs.next())
+			{
+				int wan_id = rs.getInt("wan_id"); 
+				result.add(wan_id);
+			}
+			
+		} 
+		catch (SQLException e)
+		{
+			throw e;
+		} 
+		finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;
+			}
+			if(session != null)
+			{
+				session.close();
+				session = null;
+			}
+		}
+		
+		return result;
+	}
+	
+
+	public List<Integer> getDistinctDatetimeByDevId(Integer netId, Integer devId ) throws SQLException
+	{
+		List<Integer> result = new ArrayList<Integer>();
+		ResultSet rs = null;
+		DBConnection session = getSession();
+		String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+		
+		if(log.isInfoEnabled())
+			log.info("getDistinctDatetimeByDevId> netId:"+netId+" devId:" + devId);
+		try
+		{
+			DBQuery query = session.createQuery();
+			String sql = "select distinct unixtime from " + dbname + ".device_monthly_usages where network_id = " + netId + " and device_id = " + devId;
+			
+			rs = query.executeQuery(sql);
+			while( rs.next() )
+			{
+				Integer date = rs.getInt("unixtime");
+				result.add(date);
+			}
+		}
+		catch(Exception e)
+		{
+			throw e;
+		}
+		finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;
+			}
+			if(session != null)
+			{
+				session.close();
+				session = null;
+			}
+		}
+		
+		return result;
+	}
+
+	
+	public static void main(String[] args)
+	{
+		try {
+			DeviceMonthlyUsagesDAO devMonthlyUsagesDAO = new DeviceMonthlyUsagesDAO("Michael");
+			DeviceMonthlyUsages devMonthlyUsage = devMonthlyUsagesDAO.findByNetIdDeviceIdTimeAndWanId(10, 30, new Date(1412121600000L - 8*3600000L), 0);
+			log.info(devMonthlyUsage);
+		} catch (Exception e) {
+			log.info(e.getMessage());
+		}
+	}
+}

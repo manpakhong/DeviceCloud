@@ -1,0 +1,16 @@
+package com.littlecloud.utils;
+
+import org.apache.commons.lang.StringEscapeUtils;
+
+public class HtmlUtils {
+	public static String escapeHtml(String str){
+		String escapeStr = "";
+		escapeStr = StringEscapeUtils.escapeHtml(str);
+		return escapeStr;
+	}
+	public static String unescapeHtml(String str){
+		String unescapeStr = "";
+		unescapeStr = StringEscapeUtils.unescapeHtml(str);
+		return unescapeStr;
+	}
+}

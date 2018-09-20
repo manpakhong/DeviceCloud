@@ -1,0 +1,519 @@
+package com.littlecloud.pool.object.utils;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import net.sf.json.JSONArray;
+import net.sf.json.JSONException;
+import net.sf.json.JSONObject;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.ACService;
+import com.littlecloud.ac.json.model.command.MessageType;
+import com.littlecloud.ac.json.model.command.QueryInfo;
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.dao.DeviceFeaturesDAO;
+import com.littlecloud.control.dao.DevicesDAO;
+import com.littlecloud.control.dao.branch.ProductsDAO;
+import com.littlecloud.control.entity.DeviceFeatures;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.branch.Products;
+import com.littlecloud.control.json.model.Json_Device_Feature;
+import com.littlecloud.control.json.model.Json_Device_Feature.Json_Feature_List;
+import com.littlecloud.control.json.util.JsonUtils;
+import com.littlecloud.pool.object.FeatureGetObject;
+import com.littlecloud.pool.object.FeatureGetObject.FeatureRadioConfig;
+
+public class FeatureGetUtils {
+
+	public static Logger log = Logger.getLogger(FeatureGetUtils.class);
+	
+	private static final String DATA_TAG = "data";
+	private static final String FEATURE_TAG = "feature"; 
+	
+	/* FEATURE_ATTRIBUTE */
+	public static enum ATTRIBUTE {
+		wifi_ssid, mvpn_license, mvpn_status, mvpn_bonding, wan_cnt, config_update, portal_ic2, portal_fbwifi
+	}	
+	
+	public static enum RADIO_PROTOCOL {
+		//wifi_802dot11a, wifi_802dot11ac, wifi_802dot11na, wifi_802dot11bg, wifi_802dot11ng
+		wifi_802dot11ac, wifi_802dot11na, wifi_802dot11ng
+	}
+	
+	public static boolean isPortalFbWifiSupport(FeatureGetObject fgo) {
+		return getFeatureAttributeAsBoolean(fgo, ATTRIBUTE.portal_fbwifi);
+	}
+	
+	public static boolean isPortalIc2Support(FeatureGetObject fgo) {
+		return getFeatureAttributeAsBoolean(fgo, ATTRIBUTE.portal_ic2);
+	}
+	
+	public static boolean isConfigTextSupported(FeatureGetObject fgo) {
+		return getFeatureAttributeAsInt(fgo, ATTRIBUTE.config_update)==1?true:false;
+	}
+	
+	public static int getMaxSsidSupport(FeatureGetObject fgo) {
+		return getFeatureAttributeAsInt(fgo, FeatureGetUtils.ATTRIBUTE.wifi_ssid);
+	}
+	
+	public static int getMaxMvpnSupport(FeatureGetObject fgo) {
+		return getFeatureAttributeAsInt(fgo, ATTRIBUTE.mvpn_license);
+	}
+	
+	public static int getNumberOfWanSupport(FeatureGetObject fgo) {
+		return getFeatureAttributeAsInt(fgo, ATTRIBUTE.wan_cnt);
+	}
+	
+//	public static boolean isSpeedFusionSupport(FeatureGetObject fgo)
+//	{
+//		String speedfusion = FeatureGetUtils.getFeatureAttributeAsStr(fgo, ATTRIBUTE.speedfusion);
+//		if (speedfusion != null && !speedfusion.isEmpty())
+//			return true;
+//		else
+//			return false;
+//	}
+	
+	public static boolean isSpeedFusionBondingSupport(FeatureGetObject fgo)
+	{
+		String speedfusion = FeatureGetUtils.getFeatureAttributeAsStr(fgo, ATTRIBUTE.mvpn_bonding);
+		if (speedfusion != null && !speedfusion.isEmpty() && speedfusion.equalsIgnoreCase("1"))
+			return true;
+		else
+			return false;
+	}
+
+	private static Boolean getFeatureAttributeAsBoolean(FeatureGetObject fgo, ATTRIBUTE key)
+	{
+		try {
+			JSONObject object = JSONObject.fromObject(fgo.getFeatures());
+			if (object.has(key.toString()))
+					return object.getBoolean(key.toString());
+			
+			return false;
+		} catch (JSONException e)
+		{
+			log.debugf("key %s is not found for dev %s (error:%s)", key, fgo.getKey(), e);
+			return false;
+		}
+	}
+	
+	public static int getFeatureAttributeAsInt(FeatureGetObject fgo, ATTRIBUTE key)
+	{
+		String value = getFeatureAttributeAsStr(fgo, key);
+		return Integer.valueOf(value==null?"-1":value);		
+	}
+	
+	public static String getFeatureAttributeAsStr(FeatureGetObject fgo, ATTRIBUTE key)
+	{
+		final String MVPN_TAG = "mvpn";
+		
+		try {
+			JSONObject object = JSONObject.fromObject(fgo.getFeatures());
+			switch (key)
+			{
+			case mvpn_license:
+				JSONObject mvpn = object.getJSONObject(MVPN_TAG);
+				if (mvpn.has("license"))
+				return mvpn.getString("license");
+			case mvpn_status:// Add for PepvpnEndpointsV2
+				if (object.has(MVPN_TAG))
+				{
+					JSONObject mvpn_status = object.getJSONObject(MVPN_TAG);				
+					if (mvpn_status.has("status"))
+						return mvpn_status.getString("status");
+				}
+				return null;
+			default:
+				break;
+			}
+		
+			log.debugf("...getFeatureAttributeAsStr key %s object.getString %s", key, object.getString(key.toString()));
+			
+			return object.getString(key.toString());
+		} catch (JSONException e)
+		{
+			log.debugf("key %s is not found for dev %s (error:%s)", key, fgo.getKey(), e);
+			return null;
+		}
+	}
+	
+	public static FeatureGetObject createFeatureGetObject(Integer ianaId, String sn, DeviceFeatures devFeature)
+	{	
+		QueryInfo<Object> info = JsonUtils.<QueryInfo<Object>>fromJson(devFeature.getFeatureList(), QueryInfo.class);
+		info.setIana_id(ianaId);
+		info.setSn(sn);
+		return createFeatureGetObject(info);		
+	}
+	
+	public static int getFeatureLicense (QueryInfo<Object> info)
+	{
+		/* Use JsonUtils to parse mvpn_license*/
+		
+		
+		JSONObject object = null, data =null;
+		MessageType mt = null;
+		String type = null;
+		Json_Device_Feature json_device_feature = null;
+		Json_Feature_List json_feature_list = null;
+		int license = -1;
+		
+		if (info == null)
+			return -1;
+		type = (info.getType() == null ? null : info.getType().toString());
+		log.debugf("getFeatureLicense-- type = %s, sn = %s info = %s", type, info.getSn(), info);
+
+		mt = MessageType.getMessageType(type);
+		
+		if (mt == MessageType.PIPE_INFO_TYPE_FEATURE_GET)
+			object = JSONObject.fromObject(info);
+		else {
+			log.infof("Error MessageType received in getFeatureLicense-- type = %s, sn = %s ", type, info.getSn());
+			return -1;
+		}
+		
+		if (object != null && object.has(ACUtil.DATA_TAG) && object.getJSONObject(ACUtil.DATA_TAG) != null)
+		{
+			data = object.getJSONObject(ACUtil.DATA_TAG);
+			json_device_feature = JsonUtils.fromJson(data.toString(),Json_Device_Feature.class);
+		}
+		
+		if (json_device_feature != null)
+				json_feature_list = json_device_feature.getFeature();
+			
+			log.debugf("devicefeatures.setMvpnLicense --json_feature_list= %s --data= %s",json_feature_list, data);
+			
+		if (json_feature_list != null && json_feature_list.getMvpn() != null && json_feature_list.getMvpn().getLicense() != null) {
+			license = json_feature_list.getMvpn().getLicense();
+		} 
+		
+		return license;
+	}
+	
+
+	
+	public static FeatureGetObject createFeatureGetObject(QueryInfo<Object> info)
+	{
+		FeatureGetObject fgo = new FeatureGetObject();
+		fgo.setIana_id(info.getIana_id());
+		fgo.setSn(info.getSn());
+		fgo.setSid(info.getSid());
+		fgo.setFeatures(FeatureGetUtils.getFeatureString(info));
+		
+		JSONObject object = JSONObject.fromObject(info);
+		JSONObject data = object.getJSONObject(ACUtil.DATA_TAG);
+		if (data==null)
+			return fgo;
+		
+		Integer version = data.getInt("version");		
+		FeatureRadioConfig featureRadioConfig = null;
+		String radioSupport = "";
+		
+		CopyOnWriteArrayList<FeatureRadioConfig> featureRadioConfigList = new CopyOnWriteArrayList<FeatureRadioConfig>();
+		if (version>=2)
+		{
+			/* version 2 or later */
+			JSONObject jObWifi = data.getJSONObject("feature").getJSONObject("wifi_support");
+			log.debugf("jObWifi=%s", jObWifi);
+			if (jObWifi!=null && !jObWifi.isEmpty())
+			{
+				JSONArray arrRad = jObWifi.getJSONArray("radio_list");
+				if (arrRad!=null && !arrRad.isEmpty())
+				{
+					List<Integer> radLst = (List<Integer>) JSONArray.toCollection(arrRad, Integer.class);
+					log.debugf("radLst=%s", radLst);
+
+					for (Integer v: radLst)
+					{
+						radioSupport = "";
+						featureRadioConfig =  fgo.new FeatureRadioConfig();
+
+						JSONArray arrRadType = jObWifi.getJSONArray("r"+v);
+						if (arrRadType!=null && !arrRadType.isEmpty())
+						{
+							List<Integer> radType = (List<Integer>) JSONArray.toCollection(arrRadType, Integer.class);
+							log.debugf("radType=%s", radType);
+							
+							for (Integer rad: radType)
+							{
+								radioSupport = radioSupport + String.valueOf(rad)+"|";
+							}
+							if (radioSupport.endsWith("|"))
+							{
+								radioSupport = radioSupport.substring(0, radioSupport.length() - 1);
+							}	
+							
+							featureRadioConfig.setFrequency_band(radioSupport);
+							featureRadioConfig.setModule_id(v);
+							featureRadioConfigList.add(featureRadioConfig);
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			/* version 1 */
+			String featureString = object.toString();
+			
+			// use class to store, then create json
+			Pattern pattern = Pattern.compile("\\W^?wifi_802dot11[bn]g.+");
+			Matcher matcher = pattern.matcher(featureString);
+			if (matcher.find()) {
+				radioSupport = radioSupport + "2400|";
+			}
+
+			pattern = Pattern.compile("\\W^?wifi_802dot11n[a_].+");
+			matcher = pattern.matcher(featureString);
+			if (matcher.find()) {
+				radioSupport = radioSupport + "5000|";
+			}
+			if (radioSupport.endsWith("|"))
+			{
+				radioSupport = radioSupport.substring(0, radioSupport.length() - 1);
+			}							
+
+			if (!radioSupport.isEmpty()) {
+				featureRadioConfigList = new CopyOnWriteArrayList<FeatureRadioConfig>();
+				featureRadioConfig = fgo.new FeatureRadioConfig();
+				featureRadioConfig.setFrequency_band(radioSupport);
+				featureRadioConfig.setModule_id(1);
+				featureRadioConfigList.add(featureRadioConfig);
+			}
+
+			pattern = Pattern.compile("[a-zA-Z](\\d)_wifi_802dot11");
+			matcher = pattern.matcher(featureString);
+			List<Integer> doneList = new ArrayList<Integer>();
+			while (matcher.find()) {
+				radioSupport = "";
+				boolean doneAlready = false;
+				String patternString;
+				for (Integer doneItem : doneList) {
+					if (doneItem == Integer.valueOf(matcher.group(1))) {
+						doneAlready = true;
+					}
+				}
+				if (!doneAlready) {
+					doneList.add(Integer.valueOf(matcher.group(1)));
+					featureRadioConfig = fgo.new FeatureRadioConfig();
+					featureRadioConfig.setModule_id(Integer.valueOf(matcher.group(1)));
+					patternString = "[a-zA-Z]" + matcher.group(1) + "_wifi_802dot11[bn]g.+";
+					Pattern innerPattern = Pattern.compile(patternString);
+					Matcher innerMatcher = innerPattern.matcher(featureString);
+					if (innerMatcher.find()) {
+						radioSupport = radioSupport + "2400|";
+					}
+
+					patternString = "[a-zA-Z]" + matcher.group(1) + "_wifi_802dot11n[a_].+";
+					innerPattern = Pattern.compile(patternString);
+					innerMatcher = innerPattern.matcher(featureString);
+					if (innerMatcher.find()) {
+						radioSupport = radioSupport + "5000|";
+					}
+
+					if (radioSupport.endsWith("|"))
+					{
+						radioSupport = radioSupport.substring(0, radioSupport.length() - 1);
+					}
+
+					featureRadioConfig.setFrequency_band(radioSupport);
+					featureRadioConfigList.add(featureRadioConfig);
+				}
+			}
+		}
+		
+		fgo.setFeatureRadioConfigLst(featureRadioConfigList);							
+
+		return fgo;
+	}
+	
+	public static FeatureGetObject getFeatureGetObject(Integer ianaId, String sn)
+	{
+		FeatureGetObject fgo = null;
+		String orgId = null;
+		Devices dev = null;
+		
+		/* seek cache, else seek device */
+		FeatureGetObject oSample = new FeatureGetObject();
+		oSample.setIana_id(ianaId);
+		oSample.setSn(sn);
+
+		try {
+			
+			fgo = ACUtil.<FeatureGetObject> getPoolObjectBySn(oSample, FeatureGetObject.class);			
+			if (fgo==null || fgo.getFeatures()==null)
+			{
+				if (log.isDebugEnabled())
+					log.debugf("getFeatureGetObject - FeatureGetObject is not found for dev %d %s", ianaId, sn);
+				
+				orgId = DeviceUtils.getOrgId(ianaId, sn);
+				if (orgId == null)
+				{
+					log.warnf("getFeatureGetObject - dev %d %s cannot find orgId", ianaId, sn);
+					return null;
+				}
+				
+				dev = NetUtils.getDevices(orgId, ianaId, sn);
+				if (dev == null)
+				{
+					log.warnf("getFeatureGetObject - orgId %s dev %d %s is not found in NetUtils", orgId, ianaId, sn);
+					return null;
+				}
+				
+				fgo = FeatureGetUtils.loadFeatureGetObject(orgId, true, dev);
+				if (fgo==null)
+				{
+					log.warnf("FeatureGetObject is not loaded for dev %d %s!", dev.getIanaId() ,dev.getSn());
+					ACService.fetchCommand(MessageType.PIPE_INFO_TYPE_FEATURE_GET, JsonUtils.genServerRef(), ianaId, sn, sn);
+					return null;
+				}				
+			}	
+			
+			return fgo;
+			
+		} catch (Exception e) {
+			log.error("getPoolObjectBySn exception "+e, e);
+			return null;
+		}
+	}
+	
+	private static FeatureGetObject loadFeatureGetObject(String orgId, boolean rdonly, Devices dev) throws SQLException
+	{
+		if (orgId == null || dev == null)
+		{
+			log.errorf("loadFeatureGetObject - Invalid input param orgId %s rdonly %s dev %s", orgId, rdonly, dev);
+			return null;
+		}
+		
+		DeviceFeaturesDAO dfDAO = new DeviceFeaturesDAO(orgId, rdonly);
+		DeviceFeatures devFeature = dfDAO.findById(dev.getId());
+		if (devFeature==null)
+		{
+			log.warnf("loadFeatureGetObject - dev %d %s does not have DeviceFeatures record!", dev.getIanaId(), dev.getSn());
+			return null;
+		}
+		else
+		{
+			FeatureGetObject fgo = new FeatureGetObject();
+			fgo.setIana_id(dev.getIanaId());
+			fgo.setSn(dev.getSn());
+			fgo.setSid("LoadFromDb");
+			fgo.setFeatures(getFeatureString(devFeature));
+			
+			try {
+				ACUtil.<FeatureGetObject>cachePoolObjectBySn(fgo, FeatureGetObject.class);
+				log.infof("loadFeatureGetObject - dev %d %s DeviceFeatures loaded", dev.getIanaId(), dev.getSn());
+				
+				return fgo;
+			} catch (InstantiationException | IllegalAccessException e) {
+				log.errorf("Cache exception for dev %d %s FeatureGetObject", dev.getIanaId(), dev.getSn());
+			}
+
+		}
+		
+		return null;
+	}
+		
+	private static String getFeatureString(DeviceFeatures devFeature)
+	{
+		QueryInfo<Object> info = JsonUtils.<QueryInfo<Object>>fromJson(devFeature.getFeatureList(), QueryInfo.class);		
+		return getFeatureString(info);
+	}
+	
+	private static String getFeatureString(QueryInfo<Object> info)
+	{
+		JSONObject dataO = null;
+		JSONObject featureO = null;
+		
+		try {
+			JSONObject object = JSONObject.fromObject(info);
+			if (object!=null)
+				dataO = object.getJSONObject(DATA_TAG);
+			if (dataO!=null)
+				featureO = dataO.getJSONObject(FEATURE_TAG);
+			if (featureO!=null)
+				return featureO.toString();
+			else
+				return null;
+		} catch (JSONException e)
+		{
+			log.error("QueryInfo "+info+" has JSONException", e);
+			return null;
+		}
+	}
+	
+	public static boolean isGPSFeatureSupport(String featureStr, int version)
+	{
+		boolean result = false;
+		Pattern pattern = null;
+		Matcher matcher = null;
+		
+		if( version >= 3 )
+		{
+			pattern = Pattern.compile("\"gps\":true");
+			matcher = pattern.matcher(featureStr);
+		}
+		else
+		{
+			pattern = Pattern.compile("\"gps\":\"\\w+\"");
+			matcher = pattern.matcher(featureStr);
+		}
+		
+		if (matcher.find()) 
+		{
+			result = true;
+		}
+		
+		return result;
+	}
+	
+	public static boolean isPepvpnFeatureSupport(DeviceFeatures features, Products product)
+	{
+		boolean isPepvpnSupport = false;
+		
+		if( features != null && features.getFeatureList() != null)
+		{
+			//Pattern pattern = Pattern.compile("\"speedfusion\":");
+			Pattern pattern = Pattern.compile("\"mvpn_bonding\":\"1");
+			Matcher matcher = pattern.matcher(features.getFeatureList());
+			if( matcher.find() )
+			{
+				isPepvpnSupport = true;
+			}
+		}
+		else
+		{
+			if( product.getEndpointSupport() || product.getHubSupport() )
+				isPepvpnSupport = true;
+		}
+		
+		return isPepvpnSupport;
+	}
+	
+	public static void main(String[] args) throws SQLException
+	{
+		String orgId = "riMA5x";
+		DevicesDAO devicesDAO = new DevicesDAO(orgId);
+		DeviceFeaturesDAO deviceFeaturesDAO = new DeviceFeaturesDAO(orgId,true);
+		ProductsDAO productsDAO = new ProductsDAO(true);
+		Devices devices = devicesDAO.findById(40);
+		Products products = productsDAO.findById(devices.getProductId());
+		DeviceFeatures device_feature = deviceFeaturesDAO.findById(40);
+		
+		boolean a = FeatureGetUtils.isPepvpnFeatureSupport(device_feature, products);
+		System.out.println("result : "+a);
+		
+		//String json = "{\"data\":{\"feature\":{\"web_tunneling\":\"1\",\"tz\":\"UTC\",\"config_update\":\"1\",\"mvpn\":{\"license\":1},\"portal_external_server\":true,\"ap_enterprise\":\"support\",\"portal_ic2\":true,\"wifi_support\":{\"r1\":[2400],\"radio_list\":[1]},\"r2_wifi_802dot11bg\":true,\"wifi_ssid\":16,\"mvpn_license\":\"1\\n\",\"wifi_country\":\"36 40 48 56 68 76 100 124 144 152 156 158 196 203 208 222 233 246 250 276 300 320 344 348 352 356 372 376 380 392 400 404 410 414 422 428 438 440 442 458 470 484 528 554 578 591 604 608 616 620 630 634 642 702 703 704 705 724 752 756 764 780 784 792 818 826 840 858 891\\n\",\"web_admin_tunnel\":\"1\",\"wifi_802dot11ng\":true,\"config_backup_auto\":\"1\"},\"version\":3},\"duration\":0,\"iana_id\":23695,\"interval\":0,\"retry\":false,\"sid\":\"2014091509262312400137\",\"sn\":\"2830-76FB-2805\",\"status\":200,\"timestamp\":1410774031,\"type\":\"PIPE_INFO_TYPE_FEATURE_GET\"}";
+		//QueryInfo info = JsonUtils.fromJson(json, QueryInfo.class);
+		FeatureGetObject fgo = FeatureGetUtils.createFeatureGetObject(devices.getIanaId(), devices.getSn(), device_feature);
+		System.out.println(JsonUtils.toJsonPretty(fgo));
+				
+		//System.out.println(JsonUtils.toJson(FeatureGetUtils.getRadioProtocolSupport(fgo, 3)));
+	}
+	
+}

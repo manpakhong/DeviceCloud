@@ -1,0 +1,180 @@
+package com.littlecloud.pool.object.utils;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.ACService;
+import com.littlecloud.ac.DebugManager;
+import com.littlecloud.ac.json.model.command.MessageType;
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.json.model.config.util.CommonConfigInfo;
+import com.littlecloud.control.json.util.JsonUtils;
+import com.littlecloud.pool.object.ConfigGetObject;
+import com.littlecloud.pool.object.FeatureGetObject;
+
+public class ConfigGetUtils {
+	
+	private static boolean PROD_MODE = DebugManager.isPROD_MODE();
+	public static String sampleConfig = null;
+	
+	private static final Logger log = Logger.getLogger(ConfigGetUtils.class);
+	
+	public static boolean removeObject(ConfigGetInfo ctr) throws Exception
+	{		
+		if (ctr==null || ctr.getIana_id()==null || ctr.getSn()==null)
+			return false;
+		
+		Integer ianaId = ctr.getIana_id();
+		String sn = ctr.getSn();
+				
+		try {
+			ConfigGetObject configExample = new ConfigGetObject();
+			configExample.setIana_id(ianaId);
+			configExample.setSn(sn);
+			
+			ACUtil.<ConfigGetObject> removePoolObjectBySn(configExample, ConfigGetObject.class);
+			return true;
+		} catch (Exception e) {
+			log.error("fail to remove config object for " + ctr, e);
+			return false;
+		}	
+	}
+	
+	public static ConfigGetObject getObject(ConfigGetInfo ctr) throws Exception
+	{		
+		if (ctr==null || ctr.getIana_id()==null || ctr.getSn()==null)
+			return null;
+		
+		ConfigGetObject configGetObject;
+		FeatureGetObject fgo;
+		boolean isDevConfigTextSupport = false;
+		
+		Integer ianaId = ctr.getIana_id();
+		String sn = ctr.getSn();
+		String sid = ctr.getSid();
+		StringBuilder sbSummary = ctr.getSbSummary();
+		int retry = ctr.getRetry();
+		String sidRelate = null;
+		
+		if (sid == null)
+			sid = JsonUtils.genServerRef();		
+	
+		try {
+			ConfigGetObject configExample = new ConfigGetObject();
+			configExample.setIana_id(ianaId);
+			configExample.setSn(sn);
+			
+			if (PROD_MODE)
+			{
+				configGetObject = ACUtil.<ConfigGetObject> getPoolObjectBySn(configExample, ConfigGetObject.class);
+			}
+			else
+			{
+				configGetObject = configExample;
+				configGetObject.setConfig(sampleConfig);
+				configGetObject.setStatus(200);
+			}
+			
+			fgo = FeatureGetUtils.getFeatureGetObject(ianaId, sn);								
+			if (fgo==null || fgo.getFeatures()==null)
+			{
+				log.errorf("getConfig - FeatureGetObject is not loaded for dev %d %s", ianaId, sn);				
+				return null;
+			}			
+			ctr.setOut_FeatureGetObject(fgo);
+			
+			isDevConfigTextSupport=FeatureGetUtils.isConfigTextSupported(fgo);
+			ctr.setOut_isDevConfigTextSupport(isDevConfigTextSupport);
+			if (sbSummary!=null)
+				sbSummary.append("\n* isDevConfigTextSupport " + isDevConfigTextSupport);
+			if (configGetObject == null || configGetObject.getStatus()!=200) 
+			{
+				while (retry > 0 && (configGetObject == null || configGetObject.getStatus()!=200)) 
+				{
+					sidRelate = sid + "0";
+					
+					if (isDevConfigTextSupport)
+					{
+						ACService.fetchCommand(MessageType.PIPE_INFO_TYPE_CONFIG_GET_TEXT, sidRelate, ianaId, sn, sn);							
+					}
+					else
+					{
+						ACService.fetchCommand(MessageType.PIPE_INFO_TYPE_CONFIG_GET, sidRelate, ianaId, sn, sn);
+					}
+					
+					if (log.isDebugEnabled())
+						log.debugf("dev %s retrying %d (sid, sn) = (%s, %s) ", sn, 3 - retry, sidRelate, sn);
+					
+					Thread.sleep(3000);
+	
+					configGetObject = ACUtil.<ConfigGetObject> getPoolObjectBySn(configExample, ConfigGetObject.class);
+					retry--;
+				}
+				
+				if (sbSummary!=null)
+					sbSummary.append("\n* - CONFIG_GET retried " + (3 - retry) + " times");
+			}
+		} catch (Exception e)
+		{
+			log.error("getConfig exception ", e);
+			throw e;
+		}
+		
+		return configGetObject;
+	}
+	
+	public static class ConfigGetInfo extends CommonConfigInfo {
+		private int retry;
+		private StringBuilder sbSummary = new StringBuilder();
+		
+		
+		private FeatureGetObject out_FeatureGetObject;
+		private Boolean out_isDevConfigTextSupport;
+
+		public int getRetry() {
+			return retry;
+		}
+
+		public void setRetry(int retry) {
+			this.retry = retry;
+		}
+
+		public StringBuilder getSbSummary() {
+			return sbSummary;
+		}
+
+		public void setSbSummary(StringBuilder sbSummary) {
+			this.sbSummary = sbSummary;
+		}
+
+		public FeatureGetObject getOut_FeatureGetObject() {
+			return out_FeatureGetObject;
+		}
+
+		public void setOut_FeatureGetObject(FeatureGetObject out_FeatureGetObject) {
+			this.out_FeatureGetObject = out_FeatureGetObject;
+		}		
+
+		public Boolean getOut_isDevConfigTextSupport() {
+			return out_isDevConfigTextSupport;
+		}
+
+		public void setOut_isDevConfigTextSupport(Boolean out_isDevConfigTextSupport) {
+			this.out_isDevConfigTextSupport = out_isDevConfigTextSupport;
+		}
+
+		@Override
+		public String toString() {
+			StringBuilder builder = new StringBuilder();
+			builder.append("ConfigGetInfo [retry=");
+			builder.append(retry);
+			builder.append(", sbSummary=");
+			builder.append(sbSummary);
+			builder.append(", out_FeatureGetObject=");
+			builder.append(out_FeatureGetObject);
+			builder.append(", out_isDevConfigTextSupport=");
+			builder.append(out_isDevConfigTextSupport);
+			builder.append("]");
+			return builder.toString();
+		}
+	}
+}

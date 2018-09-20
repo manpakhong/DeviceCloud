@@ -1,0 +1,6 @@
+DB_JDBC_DRIVER=com.mysql.jdbc.Driver
+DB_URL=jdbc\:mysql\://dev.littlecloud.com\:3306
+DB_USER=eclipse
+DB_PASSWORD=abc123
+DB_INIT_CONNECTION=10
+DB_MAX_CONNECTION=20

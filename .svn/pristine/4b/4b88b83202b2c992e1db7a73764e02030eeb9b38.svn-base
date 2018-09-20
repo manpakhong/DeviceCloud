@@ -1,0 +1,156 @@
+package com.littlecloud.services;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.ClientSsidUsagesDAO;
+import com.littlecloud.control.dao.DevicesDAO;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.report.ClientSsidUsages;
+import com.littlecloud.helpers.ClientSsidUsagesHelper;
+import com.littlecloud.pool.object.StationList;
+import com.littlecloud.pool.object.StationListObject;
+import com.littlecloud.utils.CalendarUtils;
+
+public class ClientSsidUsagesMgr {
+	private static final Logger log = Logger.getLogger(ClientSsidUsagesMgr.class);
+	private String orgId;
+	private ClientSsidUsagesDAO clientSsidUsagesDao;
+	public ClientSsidUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	private void init(){
+		try{
+			clientSsidUsagesDao = new ClientSsidUsagesDAO(orgId);
+		} catch (Exception e){
+			log.error("ClientSsidUsagesMgr.init() - Exception:", e);
+		}
+	}
+	public boolean doClientSsidUsagesConsolidation(){
+		boolean isDone = false;
+		try{
+			isDone = doClientSsidUsagesConsolidation(null);
+		} catch (Exception e){
+			log.error("ClientSsidUsagesMgr.doClientSsidUsagesConsolidation() - Exception:", e);
+		}
+		return isDone;
+	}
+
+	public boolean saveClientSsidUsagesList(List<ClientSsidUsages> clientSsidUsageList){
+		boolean areSaved = false;
+		try{
+			areSaved = clientSsidUsagesDao.saveClientSsidUsagesList(clientSsidUsageList);
+		} catch (Exception e){
+			log.error("ClientSsidUsagesHelper.saveClientSsidUsagesList() - Exception:", e);
+		}
+		return areSaved;
+	}
+	
+	public boolean doClientSsidUsagesConsolidation(List<Devices> deviceList){
+		boolean isDone = false;
+		try{
+			if (deviceList == null){
+				DevicesDAO devicesDao = new DevicesDAO(orgId);
+				deviceList = devicesDao.getAllDevices();
+			}
+			Calendar calCurrentCutoffTrim2Hour = CalendarUtils.getUtcCalendarToday();
+			CalendarUtils.trimCalendar2HourMinimum(calCurrentCutoffTrim2Hour);
+			if (deviceList != null && deviceList.size() > 0){
+
+				for (Devices device:deviceList){
+					ClientSsidUsagesHelper clientSsidUsagesHelper = new ClientSsidUsagesHelper(device.getIanaId(), device.getSn(), device.getNetworkId());
+					StationListObject stationListObject = clientSsidUsagesHelper.getStationListObject();
+					if (stationListObject != null && stationListObject.getStation_list() != null && stationListObject.getStation_list().size() > 0){
+						List<StationList> stationList = stationListObject.getStation_list();
+						List<ClientSsidUsages> clientSsidUsageList = new ArrayList<ClientSsidUsages>();
+						for (StationList stationListItem: stationList){
+							if(stationListItem.getType().equals(StationList.TYPE_WIRELESS)) {
+								if (stationListObject.getTimestamp() != null){
+									Calendar calStationListObject = CalendarUtils.getUtcCalendarToday();
+									calStationListObject.setTimeInMillis((stationListObject.getTimestamp() * 1000));
+									CalendarUtils.recomputeCalendar(calStationListObject);
+									if (calStationListObject.before(calCurrentCutoffTrim2Hour)) {
+										//should be disconnected now
+										// e.g. calStationListObject is 26/11/2014 14:51:32 -> 26/11/2014 14:00:00
+										// e.g. calStationListObject is 26/11/2014 13:42:30 -> 26/11/2014 13:00:00
+										Calendar calStationListObjectTrim2Hour = CalendarUtils.getUtcCalendarToday();
+										calStationListObjectTrim2Hour.setTimeInMillis(stationListObject.getTimestamp() * 1000);
+										CalendarUtils.trimCalendar2HourMinimum(calStationListObjectTrim2Hour);
+										CalendarUtils.recomputeCalendar(calStationListObjectTrim2Hour);
+										int unixTime = CalendarUtils.changeDate2Unixtime(calStationListObjectTrim2Hour.getTime());
+										Date utcTime = calStationListObjectTrim2Hour.getTime();
+										
+										ClientSsidUsages clientSsidUsage = new ClientSsidUsages();
+										clientSsidUsage.setNetworkId(device.getNetworkId());
+										clientSsidUsage.setDeviceId(device.getId());
+										clientSsidUsage.setMac(stationListItem.getMac());
+										clientSsidUsage.setName(stationListItem.getName());
+										clientSsidUsage.setBssid(stationListItem.getBssid());
+										clientSsidUsage.setEssid(stationListItem.getEssid());
+										clientSsidUsage.setEncryption(stationListItem.getSecurity());
+										clientSsidUsage.setActive(true);
+										clientSsidUsage.setType(stationListItem.getType());
+										clientSsidUsage.setDatetime(utcTime);
+										clientSsidUsage.setUnixtime(unixTime);
+										clientSsidUsage.createReplace(); // insert on duplicate then update, duplication checking is based on unique index
+										if(log.isInfoEnabled()){
+											log.infof("StartPersistReportFromCache: Persist clientIpMacMappings, addBatch clientSsidUsages org %s dev %d %s", orgId, device.getIanaId(), device.getSn());
+										}
+										clientSsidUsageList.add(clientSsidUsage);
+									} else { // !calStationListObject.before(calToday)
+										if (stationListItem.getFirst_appear_time() != null){
+											// still connecting
+											Calendar calStationListFirstAppearTime = CalendarUtils.getUtcCalendarToday();
+											calStationListFirstAppearTime.setTimeInMillis(stationListItem.getFirst_appear_time() * 1000);
+											CalendarUtils.recomputeCalendar(calStationListFirstAppearTime);
+											if (calStationListFirstAppearTime.before(calCurrentCutoffTrim2Hour)) {
+												Calendar calClientSsidUsage = (Calendar) calCurrentCutoffTrim2Hour.clone();		
+												calClientSsidUsage.add(Calendar.HOUR_OF_DAY, -1);
+												CalendarUtils.recomputeCalendar(calClientSsidUsage);
+												//connected before, save to DB
+												int unixTime = CalendarUtils.changeDate2Unixtime(calClientSsidUsage.getTime());
+												Date utcTime = calClientSsidUsage.getTime();
+												ClientSsidUsages clientSsidUsage = new ClientSsidUsages();
+												clientSsidUsage.setNetworkId(device.getNetworkId());
+												clientSsidUsage.setDeviceId(device.getId());
+												clientSsidUsage.setMac(stationListItem.getMac());
+												clientSsidUsage.setName(stationListItem.getName());
+												clientSsidUsage.setBssid(stationListItem.getBssid());
+												clientSsidUsage.setEssid(stationListItem.getEssid());
+												clientSsidUsage.setEncryption(stationListItem.getSecurity());
+												clientSsidUsage.setActive(true);
+												clientSsidUsage.setType(stationListItem.getType());
+												clientSsidUsage.setDatetime(utcTime);
+												clientSsidUsage.setUnixtime(unixTime);
+												clientSsidUsage.createReplace();
+		
+												if(log.isInfoEnabled()){
+													log.infof("StartPersistReportFromCache: Persist clientIpMacMappings, addBatch clientSsidUsages org %s dev %d %s", orgId, device.getIanaId(), device.getSn());
+												}
+												clientSsidUsageList.add(clientSsidUsage);
+											}
+										}
+									}
+								}
+							}
+						}
+						if (clientSsidUsageList != null && clientSsidUsageList.size() > 0){
+							boolean areSaved = saveClientSsidUsagesList(clientSsidUsageList);
+							if (!areSaved){
+								log.warnf("ClientSsidUsagesMgr.doClientSsidUsagesConsolidation() - areSaved: %s, clientSsidUsageList: %s", areSaved, clientSsidUsageList);
+							}
+						}
+					} // end if (stationList != null && stationList.size() > 0)
+				} // end for (Devices device: deviceList)
+			} // end if (deviceList != null && deviceList.size() > 0)
+		} catch (Exception e){
+			log.error("ClientSsidUsagesMgr.doClientSsidUsagesConsolidation() - Exception:", e);
+		}
+		return isDone;
+	}
+}

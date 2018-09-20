@@ -1,0 +1,112 @@
+package com.littlecloud.services;
+
+import java.sql.SQLException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.ClientMonthlyUsagesDAO;
+import com.littlecloud.control.dao.DailyClientUsagesDAO;
+import com.littlecloud.control.dao.branch.SnsOrganizationsDAO;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.report.ClientMonthlyUsages;
+import com.littlecloud.control.entity.report.DailyClientUsages;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.util.CalendarUtils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.util.DBUtil;
+
+public class ClientMonthlyUsagesMgr {
+	private static final Logger log = Logger.getLogger(ClientMonthlyUsagesMgr.class);
+	private String orgId;
+	private ClientMonthlyUsagesDAO clientMonthlyUsageDao = null;
+	public ClientMonthlyUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	public void init(){
+		try{
+			clientMonthlyUsageDao = new ClientMonthlyUsagesDAO(orgId);
+		} catch (Exception e){
+			log.error("ClientMonthlyUsagesMgr.init() - Exception:", e);
+		}
+	}
+	
+	public List<ClientMonthlyUsages> findByMacIpNetIdDevIdAndCalendarRange(String mac, String ip, int networkId, int deviceId, Calendar calFrom, Calendar calTo){
+		List<ClientMonthlyUsages> clientMonthlyUsageList = null;
+		try{
+			clientMonthlyUsageList = clientMonthlyUsageDao.findByMacIpNetIdDevIdAndCalendarRange(mac, ip, networkId, deviceId, calFrom, calTo);
+		} catch (Exception e){
+			log.error("ClientMonthlyUsagesMgr.findByMacIpNetIdDevIdAndCalendarRange() - Exception:", e);
+		}
+		return clientMonthlyUsageList;
+	}
+	public boolean saveClientMonthlyUsagesList(List<ClientMonthlyUsages> clientMonthlyUsageList){
+		boolean areSaved = false;
+		try{
+			areSaved = clientMonthlyUsageDao.saveClientMonthlyUsagesList(clientMonthlyUsageList);
+		} catch (Exception e){
+			log.error("ClientMonthlyUsagesMgr.saveClientMonthlyUsagesList() - Exception:", e);
+		}
+		return areSaved;
+	}
+	public boolean doClientMonthlyUsagesConsolidation(Calendar calFrom, Calendar calTo){
+		boolean isDone = false;
+		try{
+			long tstart = System.currentTimeMillis();
+			if (log.isInfoEnabled()){
+				log.infof("ClientMonthlyUsagesMgr.doClientMonthlyUsagesConsolidation(): orgId: %s", orgId);
+			}
+			ClientDailyUsagesMgr clientDailyUsagesMgr = new ClientDailyUsagesMgr(orgId);
+			ClientMonthlyUsagesMgr clientMonthlyUsagesMgr = new ClientMonthlyUsagesMgr(orgId);
+			List<DailyClientUsages> monthlyRecordList = clientDailyUsagesMgr.getClientMonthlyUsagesRecords(calFrom, calTo);
+			if (monthlyRecordList != null && monthlyRecordList.size() > 0){
+				List<ClientMonthlyUsages> clientMonthlyUsageList = new ArrayList<ClientMonthlyUsages>();
+				for(DailyClientUsages monthlyObj : monthlyRecordList){
+					ClientMonthlyUsages monthlyRecord = new ClientMonthlyUsages();
+					monthlyRecord.setUnixtime(CalendarUtils.changeDate2Unixtime(calFrom.getTime()));
+					monthlyRecord.setDeviceId(monthlyObj.getDeviceId());
+					monthlyRecord.setNetworkId(monthlyObj.getNetworkId());
+					monthlyRecord.setMac(monthlyObj.getMac());
+					monthlyRecord.setIp(monthlyObj.getIp());
+					monthlyRecord.setRx(monthlyObj.getRx());
+					monthlyRecord.setTx(monthlyObj.getTx());
+					monthlyRecord.setType(monthlyObj.getType());
+					monthlyRecord.setDatetime(calFrom.getTime());
+					
+					List<ClientMonthlyUsages> preMonthlyClientUsageList = clientMonthlyUsagesMgr.findByMacIpNetIdDevIdAndCalendarRange(monthlyRecord.getMac(), monthlyRecord.getIp(), monthlyRecord.getNetworkId(), monthlyRecord.getDeviceId(), calFrom, calTo);
+					ClientMonthlyUsages preMonthlyClientUsage = null;
+					if (preMonthlyClientUsageList != null && preMonthlyClientUsageList.size() > 0){
+						preMonthlyClientUsage = preMonthlyClientUsageList.get(0);
+					}
+					if( preMonthlyClientUsage != null ){
+						monthlyRecord.setId(preMonthlyClientUsage.getId());
+						monthlyRecord.replace();
+					} else {
+						monthlyRecord.create();
+					}
+					clientMonthlyUsageList.add(monthlyRecord);
+				}
+				if (clientMonthlyUsageList != null && clientMonthlyUsageList.size() > 0){
+					boolean areSaved = saveClientMonthlyUsagesList(clientMonthlyUsageList);
+					if (!areSaved){
+						log.warnf("ClientMonthlyUsagesMgr.doClientMonthlyUsagesConsolidation() - areSaved: %s, orgId: %s", areSaved, orgId);
+					}
+				}
+				
+				long tused = (System.currentTimeMillis() - tstart) / 1000;
+				if (log.isInfoEnabled()){
+					log.infof("End ClientMonthlyUsagesMgr.doClientMonthlyUsagesConsolidation() for org: %s, tused: %d", orgId, tused);
+				}
+			}
+		} catch (Exception e){
+			log.error("ClientMonthlyUsagesMgr.doClientMonthlyUsagesConsolidation() - Exception:", e);
+		}
+		return isDone;
+	}
+	
+}

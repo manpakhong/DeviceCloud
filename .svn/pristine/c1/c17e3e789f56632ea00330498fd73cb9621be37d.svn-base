@@ -1,0 +1,873 @@
+/*
+ * 
+ * Pending orgId from cache for persisting data 
+ * Use sn to find/verify device
+ * 
+ */
+
+package com.littlecloud.pool.control;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import net.sf.json.JSONObject;
+
+import org.jboss.logging.Logger;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.littlecloud.ac.ACService;
+import com.littlecloud.ac.WtpMsgHandler;
+import com.littlecloud.ac.WtpMsgHandlerUtils;
+import com.littlecloud.ac.json.model.Json_DeviceNeighborList;
+import com.littlecloud.ac.json.model.Json_StationList;
+import com.littlecloud.ac.json.model.Json_StationListDelta;
+import com.littlecloud.ac.json.model.command.MessageType;
+import com.littlecloud.ac.json.model.command.QueryInfo;
+import com.littlecloud.ac.messagehandler.DeviceNeighborSsidDiscoveryMessageHandler;
+import com.littlecloud.ac.util.ACScheduler;
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.entity.report.ClientSsidUsages;
+import com.littlecloud.control.json.model.config.util.RadioConfigUtils;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.control.json.util.JsonUtils;
+import com.littlecloud.pool.object.ClientInfoObject;
+import com.littlecloud.pool.object.DevDetailObject;
+import com.littlecloud.pool.object.DevLocationsObject;
+import com.littlecloud.pool.object.DevLocationsReportObject;
+import com.littlecloud.pool.object.DevOnlineObject;
+import com.littlecloud.pool.object.LocationList;
+import com.littlecloud.pool.object.MacIpList;
+import com.littlecloud.pool.object.PoolObjectDAO;
+import com.littlecloud.pool.object.SimpleDevLocationsObject;
+import com.littlecloud.pool.object.SimpleLocationList;
+import com.littlecloud.pool.object.StationList;
+import com.littlecloud.pool.object.StationListObject;
+import com.littlecloud.pool.object.StationUsageObject;
+import com.littlecloud.pool.object.UpdatedClientInfoObject;
+import com.littlecloud.pool.object.StationUsageObject.StationUsageList;
+import com.littlecloud.pool.object.utils.StationListUtils;
+import com.littlecloud.pool.utils.ComparatorLocationList;
+
+/* Note: Too much schedlar thread will be created if the key is object type + organization id, thus organization id will be used as key for batch insert */
+public class QueueCacheControl {
+	public static Logger log = Logger.getLogger(QueueCacheControl.class);
+	//public static Logger logJson = Logger.getLogger(QueueCacheControl.class + "Json");
+
+	private static final int MAX_QUEUE_SIZE = 500;
+	private static final int MAX_BATCH_SIZE = 1000; // from 150 -> 500 -> 1000
+	private static ConcurrentHashMap<String, BlockingQueue<String>> queueMap = new ConcurrentHashMap<String, BlockingQueue<String>>();
+	private static ConcurrentHashMap<String, String> queueRunningTasks = new ConcurrentHashMap<String, String>();
+
+	private static int counter = 0;
+
+	private static AtomicInteger msg_process_counter = new AtomicInteger(0);
+	
+	public static int getMaxQueueSize() {
+		return MAX_QUEUE_SIZE;
+	}
+	
+	public static int getQueueSize(String orgId) {
+		return queueMap.get(orgId).size();
+	}
+	
+	public static ConcurrentHashMap<String, String> getQueueRunningTasks() {
+		return queueRunningTasks;
+	}
+
+	public static Set<String> getAllQueueSet() {		
+		return queueMap.keySet();
+	}
+	
+	public static int getMsg_process_counter() {
+		return msg_process_counter.intValue();
+	}
+
+	public static void setMsg_process_counter(int msg_process_counter) {
+		QueueCacheControl.msg_process_counter.set(msg_process_counter);
+	}
+	
+	public static void addMsgProcessCounter()
+	{
+		QueueCacheControl.msg_process_counter.incrementAndGet();
+	}
+	
+	public static List<String> getQueueContent(String orgId, int size) {
+				
+		int count = 0;
+		
+		BlockingQueue<String> queue = queueMap.get(orgId);
+		
+		List<String> result = new ArrayList<String>();
+		
+		if (orgId==null)
+			return result;
+		
+		try {
+			Iterator<String> itr = queue.iterator();
+			while (itr.hasNext())
+			{
+				count++;
+				String content = (String) itr.next();				
+				
+				result.add(content);
+				
+				if (size!=-1 && count>=size)
+				{
+					break;
+				}
+			}
+		} catch (Exception e) {
+			log.error("getQueueCacheContent iterator exception", e);
+		}
+		return result;
+	}
+	
+	public synchronized static void setCounter(boolean bAdd) 
+	{
+		if (bAdd)
+		{
+			counter++;
+		}
+		else
+		{
+			counter--;
+		}
+	}
+	
+	public static boolean put(String orgId, String json)
+	{
+		String key = orgId;
+		///log.debug("Cache Queue " + key + " add json " + json);
+
+		/* create or get corresponding queue */
+		BlockingQueue<String> queue = (ArrayBlockingQueue<String>) queueMap.get(key);
+		if (queue == null)
+		{
+			log.debug("[QUEUE] CREATE SCHEDULER FOR Cache QUEUE " + key);
+			queue = startScheduler(key);
+		}
+		return queue.add(json);
+	}
+
+	public static synchronized BlockingQueue<String> startScheduler(String key)
+	{
+		BlockingQueue<String> queue = (ArrayBlockingQueue<String>) queueMap.get(key);
+		if (queue != null)
+			return queue;
+
+		/* create new queue */
+		queue = new ArrayBlockingQueue<String>(MAX_QUEUE_SIZE);
+		queueMap.put(key, queue);
+
+		/* start scheduler to persist queue */
+		ACScheduler acs = new ACScheduler();
+		acs.startPersistQueueCacheScheduler(key);
+
+		log.info("[QUEUE] >>>> Queue Cache for key " + key + " started.");
+
+		return queue;
+	}
+
+	public static Object get(String orgId)
+	{
+		String key = orgId;
+		log.debug("Queue Cache" + key + " take");
+
+		BlockingQueue<String> queue = (ArrayBlockingQueue<String>) queueMap.get(key);
+		if (queue == null)
+			return null;
+
+		return queue.poll();
+	}
+
+	public static void persistQueueCahce(String orgId)
+	{
+		String taskName = orgId + "_" + DateUtils.getUtcDate().getTime();
+		
+		setCounter(true);
+		addMsgProcessCounter();
+		
+		int globalstarttime = 0;
+		int starttime = 0;
+		int endtime = 0;
+		
+		String key = orgId;
+		int curProcessSize = 0;
+		//log.debugf("persistQueueCache - Queue Cache %s persist (counter=%d)", key, counter);
+
+		/* get current queue size */
+		BlockingQueue<String> queue = (ArrayBlockingQueue<String>) queueMap.get(key);
+		if (queue == null)
+		{
+			log.debug("queue Cache for key " + key + " is null");
+			setCounter(false);
+			return;
+		}		
+		curProcessSize = (queue.size() > MAX_BATCH_SIZE? MAX_BATCH_SIZE:queue.size());
+		//log.info("curProcessSize =" + curProcessSize);
+
+		/* get organization id from DevOnlineObject */
+//		String DATA_TAG = "data";
+		JSONObject object;
+		JSONObject data;
+		
+		StationListObject stationListObjectFromCache = null;
+		
+		StringBuilder jsonBuffer = new StringBuilder();
+		
+		QueueTaskInfo qtaskInfo = null;	
+		try {			
+			//log.info("queueCacheSize =" + queue.size());
+			globalstarttime = DateUtils.getUnixtime();
+			//while (!queue.isEmpty())
+			qtaskInfo = new QueueTaskInfo();
+			for (int i = 0; i < curProcessSize; i++)
+			{
+				/* loop all objects into arrays */
+				starttime = DateUtils.getUnixtime();
+				
+				String json = queue.poll();
+				log.debugf("queueSizeLoop %s queueSize=%d processing %d/%d", taskName, queue.size(), i, curProcessSize);
+
+				MessageType mt = null;
+				String taskInfoKey = null;
+				try {
+					Gson gson = new Gson();
+					log.debugf("STAT20140317 - json from queue.poll():%s", json);
+					QueryInfo<Object> info = gson.fromJson(json, QueryInfo.class);
+					String type = info.getType() == null ? null : info.getType().toString();
+					log.infof("taskName = %s, type = %s, sn = %s processing %d/%d", taskName, type, info.getSn(), i, curProcessSize);
+
+					mt = MessageType.getMessageType(type);
+					
+					taskInfoKey = qtaskInfo.startCacheTask(info.getSn(), mt);
+					
+					jsonBuffer.append(info.toString());
+					jsonBuffer.append("\n");
+
+					switch (mt)
+					{
+					case PIPE_INFO_TYPE_DEV_ONLINE:
+						break;
+					case PIPE_INFO_TYPE_DEV_OFFLINE:
+						break;
+					case PIPE_INFO_TYPE_EVENT_LOG:					
+						break;
+					case PIPE_INFO_TYPE_DEV_DETAIL:
+						break;
+					case PIPE_INFO_TYPE_DEV_BANDWIDTH:
+						break;
+					case PIPE_INFO_TYPE_DEV_USAGE:						
+						break;
+					case PIPE_INFO_TYPE_DEV_LOCATIONS:
+						break;
+					case PIPE_INFO_TYPE_DEV_SSID_USAGES:
+						break;
+					case PIPE_INFO_TYPE_DEV_CHANNEL_UTIL:
+						break;
+					case PIPE_INFO_TYPE_DEV_WLAN:
+						break;
+					case PIPE_INFO_TYPE_DEV_TCPDUMP:
+						break;
+					case PIPE_INFO_TYPE_STATION_LIST: 
+					{
+						object = JSONObject.fromObject(info);
+						data = object.getJSONObject(RadioConfigUtils.DATA_TAG);
+						Json_StationList stationLstJson = gson.fromJson(data.toString(), Json_StationList.class);
+						if (stationLstJson == null) {
+							log.warn("station list Json is null for " + info.getSn() + " status: " + info.getStatus());
+							break;
+						}
+						
+						DevOnlineObject devOnlineObj = new DevOnlineObject();
+						devOnlineObj.setIana_id(info.getIana_id());
+						devOnlineObj.setSn(info.getSn());
+						devOnlineObj = ACUtil.getPoolObjectBySn(devOnlineObj, DevOnlineObject.class);
+						if(devOnlineObj == null) {
+							log.warn("devOnlineObj is null during STATION_LIST processing  for " + info.getSn() + " status: " + info.getStatus());
+							break;
+						}
+						
+						boolean isUpdate = false;
+						stationListObjectFromCache = new StationListObject();
+						stationListObjectFromCache.setSn(info.getSn());
+						stationListObjectFromCache.setIana_id(info.getIana_id());
+						stationListObjectFromCache = ACUtil.getPoolObjectBySn(stationListObjectFromCache, StationListObject.class);
+						List<StationList> stationListFromCache = null;
+						HashMap<String, StationList> stationCacheMap = new HashMap<String, StationList>();
+						
+						// prepare stationList map from stationList list
+						if (stationListObjectFromCache!= null){
+							stationListFromCache = stationListObjectFromCache.getStation_list();
+							stationCacheMap = new HashMap<String, StationList>((int)(stationListFromCache.size() / 0.75 + 1));
+							for(StationList stationItem: stationListFromCache) {
+								stationCacheMap.put(stationItem.getClient_id(), stationItem);
+							}
+						}
+						
+						StationListObject stationListJson = StationListUtils.convertStationLst(stationLstJson);
+						if (stationListJson == null) {
+							stationListJson = new StationListObject();
+							stationListJson.setStation_list(new ArrayList<StationList>());
+						}
+						if(log.isDebugEnabled())
+							log.info("stationLst = " + stationListJson);
+							
+						stationListJson.setNetwork_id(devOnlineObj.getNetwork_id());
+						stationListJson.setDevice_id(devOnlineObj.getDevice_id());
+						stationListJson.setTimestamp(info.getTimestamp());
+						stationListJson.setSn(info.getSn());
+						stationListJson.setIana_id(info.getIana_id());
+						stationListJson.setSid(info.getSid());
+
+						List<StationList> clientList = stationListJson.getStation_list();
+						int totalOnline = 0;
+						List<StationList> delList = new ArrayList<StationList>();
+						
+						/*
+						 * Generate client info map
+						 */
+						UpdatedClientInfoObject updated_client_info = new UpdatedClientInfoObject();
+						updated_client_info.setIana_id(stationListJson.getIana_id());
+						updated_client_info.setSn(stationListJson.getSn());
+						updated_client_info = ACUtil.getPoolObjectBySn(updated_client_info, UpdatedClientInfoObject.class);
+						ConcurrentHashMap<String, ClientInfoObject> clientInfoMap = null;
+						if( updated_client_info != null )
+							clientInfoMap = updated_client_info.getClientInfoMap();
+						else
+						{
+							updated_client_info = new UpdatedClientInfoObject();
+							updated_client_info.setIana_id(stationListJson.getIana_id());
+							updated_client_info.setSn(stationListJson.getSn());
+							clientInfoMap = new ConcurrentHashMap<String, ClientInfoObject>();
+						}
+							
+						for (StationList client:clientList)
+						{
+							boolean isActive = false;
+							if(log.isDebugEnabled())
+								log.info("check for device: dev="+client);
+							
+							if (client.getStatus().equalsIgnoreCase("active")){
+								isActive = true;
+								totalOnline++;
+							}
+							
+							if( client.getIp() != null && client.getIp().equals("0.0.0.0") )
+							{
+								delList.add(client);
+								continue;
+							}
+							
+							/*
+							 * Cache client info object
+							 */
+							String clientId = PoolObjectDAO.convertToClientId(client.getMac(), client.getIp());
+							// only update for Active client
+							if( clientId != null && clientId.isEmpty() == false && isActive)
+							{
+								isUpdate = false;
+								ClientInfoObject client_info = null;
+								if( clientInfoMap != null )
+								{
+									if( clientInfoMap.contains(clientId) )
+									{
+										client_info = clientInfoMap.get(clientId);
+										if( !(client_info != null && client_info.getClient_name()!=null 
+												&& client_info.getClient_name().equals(client.getName())) )
+										{
+											client_info.setClient_name(client.getName());
+											if( devOnlineObj != null )
+												client_info.setLast_device_id(devOnlineObj.getDevice_id());
+											client_info.setLastUpdated(new Date().getTime());
+											client_info.setOrganization_id(orgId);
+											client_info.setFlag(true);
+											clientInfoMap.put(clientId, client_info);
+											isUpdate = true;
+										}
+									}
+									else
+									{
+										client_info = new ClientInfoObject();
+										client_info.setOrganization_id(orgId);
+										client_info.setClient_id(clientId);
+										client_info.setClient_name(client.getName());
+										client_info.setLastUpdated(new Date().getTime());
+										if( devOnlineObj != null )
+											client_info.setLast_device_id(devOnlineObj.getDevice_id());
+										client_info.setFlag(true);
+										clientInfoMap.put(clientId, client_info);
+										isUpdate = true;
+									}
+									
+									if(isUpdate)
+										updated_client_info.setLastUpdatedTime(new Date());
+								}
+							}
+							
+							StationList cacheItem = stationCacheMap.get(client.getClient_id());
+							// if found in cache
+							if(cacheItem != null) {
+								// first copy useful info from cached item
+								StationListUtils.copyStationList(cacheItem, client);
+								// then remove the item from cache
+								stationCacheMap.remove(client.getClient_id());
+								if(log.isDebugEnabled())
+									log.info("remove updated device: dev="+client);
+							}
+							
+							updated_client_info.setClientInfoMap(clientInfoMap);
+							ACUtil.cachePoolObjectBySn(updated_client_info, UpdatedClientInfoObject.class);
+						}
+
+						// first remove items in delList
+						if(log.isDebugEnabled())
+							log.info("delList = "+delList);
+						clientList.removeAll(delList);
+
+						// then add back cache remaining items and mark inactive
+						for (StationList cacheRemainItem: stationCacheMap.values()) {
+							cacheRemainItem.setStatus("inactive");
+							clientList.add(cacheRemainItem);
+							if(log.isDebugEnabled())
+								log.info("add back cache inactive devices: dev="+cacheRemainItem);
+						}
+						
+						stationListJson.setStation_list(clientList);
+						stationListJson.setNetwork_id(devOnlineObj.getNetwork_id());
+						stationListJson.setDevice_id(devOnlineObj.getDevice_id());
+						stationListJson.setTotalClient(clientList.size());	// both active and inactive
+						stationListJson.setTotalOnlineClient(totalOnline);
+						
+						ACUtil.cachePoolObjectBySn(stationListJson, StationListObject.class);
+						break;
+					}
+					case PIPE_INFO_TYPE_STATION_LIST_DELTA:
+					{
+						object = JSONObject.fromObject(info);
+						data = object.getJSONObject(RadioConfigUtils.DATA_TAG);
+						Json_StationListDelta stationLstDeltaJson = gson.fromJson(data.toString(), Json_StationListDelta.class);
+						if (stationLstDeltaJson == null){
+							log.info("station delta list is null for " + info.getSn() + " status: " + info.getStatus());
+							break; // break for simplifying the flow
+						}
+						
+						DevOnlineObject devOnlineObj = new DevOnlineObject();
+						devOnlineObj.setIana_id(info.getIana_id());
+						devOnlineObj.setSn(info.getSn());
+						devOnlineObj = ACUtil.getPoolObjectBySn(devOnlineObj, DevOnlineObject.class);
+						if(devOnlineObj == null) {
+							log.warn("devOnlineObj is null during STATION_LIST_DELTA processing  for " + info.getSn() + " status: " + info.getStatus());
+							break;
+						}
+						
+						boolean isUpdate = false;
+						StationListObject stationListJson = StationListUtils.convertStationLst(stationLstDeltaJson);
+						if (stationListJson == null) {
+							stationListJson = new StationListObject();
+							stationListJson.setStation_list(new ArrayList<StationList>());
+						}
+						stationListJson.setTimestamp(info.getTimestamp());
+							
+						if(log.isDebugEnabled())
+							log.info("stationLst = " + stationListJson);
+						
+						stationListObjectFromCache = new StationListObject();
+						stationListObjectFromCache.setSn(info.getSn());
+						stationListObjectFromCache.setIana_id(info.getIana_id());
+						stationListObjectFromCache = ACUtil.getPoolObjectBySn(stationListObjectFromCache, StationListObject.class);
+						if (stationListObjectFromCache == null){
+							//no station list found in, add all new device to cache, skip remove part
+							if (stationListJson != null && !stationListJson.getStation_list().isEmpty()){
+								//have some device to add	
+								stationListObjectFromCache = new StationListObject();
+								stationListObjectFromCache.setSn(info.getSn());
+								stationListObjectFromCache.setIana_id(info.getIana_id());
+								stationListObjectFromCache.setNetwork_id(devOnlineObj.getNetwork_id());
+								stationListObjectFromCache.setDevice_id(devOnlineObj.getDevice_id());
+								stationListObjectFromCache.setStation_list(stationListJson.getStation_list());
+								stationListObjectFromCache.setSid(JsonUtils.genServerRef());
+
+								ACUtil.cachePoolObjectBySn(stationListObjectFromCache, StationListObject.class);
+								//never had a full list but a delta list, need to fetch full list first
+								ACService.fetchCommand(MessageType.PIPE_INFO_TYPE_STATION_LIST, stationListObjectFromCache.getSid(), info.getIana_id(), info.getSn());
+							}
+						} else {						
+							//do add and set inactive
+//							List<StationList> listToAddBack = new ArrayList<StationList>();
+							HashMap <String, StationList> stationListCacheMap = new HashMap<String, StationList>();
+							
+							for(StationList stationItem: stationListObjectFromCache.getStation_list()) {
+								stationListCacheMap.put(stationItem.getClient_id(), stationItem);
+							}
+							
+							//do set inactive first
+							List<MacIpList> delList = stationLstDeltaJson.getDel_station_list();
+							if (delList!= null && !delList.isEmpty()) {
+								for (MacIpList macItem: delList){
+									String client_id = PoolObjectDAO.convertToClientId(macItem.getMac(), macItem.getIp());
+									StationList stationItem = stationListCacheMap.get(client_id);
+									if(stationItem !=null) {
+										stationItem.setStatus("inactive");
+									}
+								}
+							}
+
+							//do add part next, this also for the update part, as the later one will overwrite the former one
+							if (stationListJson != null && !stationListJson.getStation_list().isEmpty()){
+								//have some devices to add
+								for (StationList stationListItem: stationListJson.getStation_list()){
+//									listToAddBack.add(stationListItem);
+									StationList cacheItem = stationListCacheMap.get(stationListItem.getClient_id());
+									if(cacheItem == null) { // for new client
+										stationListCacheMap.put(stationListItem.getClient_id(), stationListItem);
+									} else { // if found in cache
+										// if new is inactive, only update cache item's status to inactive and keep others
+										if(stationListItem.getStatus().equals("inactive")) { // for inactive client, keep cache's item
+											cacheItem.setStatus("inactive");
+										} else {
+											// if new is active, then copy useful info
+											StationListUtils.copyStationList(cacheItem, stationListItem);
+											stationListCacheMap.put(stationListItem.getClient_id(), stationListItem);
+										}
+									}
+								}
+							}
+							
+							int totalOnline = 0;
+							List<StationList> delListForDelta = new ArrayList<StationList>();
+							
+							/*
+							 * Generate client info table
+							 */
+							UpdatedClientInfoObject updated_client_info = new UpdatedClientInfoObject();
+							updated_client_info.setIana_id(info.getIana_id());
+							updated_client_info.setSn(info.getSn());
+							updated_client_info = ACUtil.getPoolObjectBySn(updated_client_info, UpdatedClientInfoObject.class);
+							ConcurrentHashMap<String, ClientInfoObject> clientInfoMap = null;
+							if( updated_client_info != null )
+								clientInfoMap = updated_client_info.getClientInfoMap();
+							else
+							{
+								updated_client_info = new UpdatedClientInfoObject();
+								updated_client_info.setIana_id(info.getIana_id());
+								updated_client_info.setSn(info.getSn());
+								clientInfoMap = new ConcurrentHashMap<String, ClientInfoObject>();
+							}
+							
+							for (StationList client: stationListCacheMap.values()){
+								boolean isActive = false;
+								if (client.getStatus().equalsIgnoreCase("active")){
+									isActive = true;
+									totalOnline++;
+								}
+
+								if( client.getIp() != null && client.getIp().equals("0.0.0.0") )
+								{
+									delListForDelta.add(client);
+									continue;
+								}
+								
+								/*
+								 * Cache client info object
+								 */
+								
+								String clientId = PoolObjectDAO.convertToClientId(client.getMac(), client.getIp());
+								if( clientId != null && clientId.isEmpty() == false && isActive)
+								{
+									isUpdate = false;
+									ClientInfoObject client_info = null;
+									if( clientInfoMap != null )
+									{
+										if( clientInfoMap.contains(clientId) )
+										{
+											client_info = clientInfoMap.get(clientId);
+											if( !(client_info != null && client_info.getClient_name()!=null 
+													&& client_info.getClient_name().equals(client.getName())) )
+											{
+												client_info.setClient_name(client.getName());
+												client_info.setLast_device_id(devOnlineObj.getDevice_id());
+												client_info.setLastUpdated(new Date().getTime());
+												client_info.setOrganization_id(orgId);
+												client_info.setFlag(true);
+												clientInfoMap.put(clientId, client_info);
+												isUpdate = true;
+											}
+										}
+										else
+										{
+											client_info = new ClientInfoObject();
+											client_info.setOrganization_id(orgId);
+											client_info.setClient_id(clientId);
+											client_info.setClient_name(client.getName());
+											client_info.setLastUpdated(new Date().getTime());
+											client_info.setLast_device_id(devOnlineObj.getDevice_id());
+											client_info.setFlag(true);
+											clientInfoMap.put(clientId, client_info);
+											isUpdate = true;
+										}
+										
+										if(isUpdate)
+											updated_client_info.setLastUpdatedTime(new Date());
+									}
+									
+								}
+								//End to add client info Object to list
+							}
+							
+							updated_client_info.setClientInfoMap(clientInfoMap);
+							ACUtil.cachePoolObjectBySn(updated_client_info, UpdatedClientInfoObject.class);
+							//End for caching client info object
+							if(log.isDebugEnabled())
+								log.debug(stationListCacheMap.values());
+							
+							List<StationList> tmpStationList = new ArrayList<StationList>(stationListCacheMap.values());
+							tmpStationList.removeAll(delListForDelta);
+							stationListObjectFromCache.setStation_list(tmpStationList);
+							stationListObjectFromCache.setTotalClient(tmpStationList.size());
+							stationListObjectFromCache.setTotalOnlineClient(totalOnline);
+							stationListObjectFromCache.setTimestamp(info.getTimestamp());
+
+							ACUtil.cachePoolObjectBySn(stationListObjectFromCache, StationListObject.class);
+						}
+					
+						break;
+					}
+					case PIPE_INFO_TYPE_STATION_BANDWIDTH_LIST:
+						break;
+					case PIPE_INFO_TYPE_STATION_USAGE:						
+						object = JSONObject.fromObject(info);
+						data = object.getJSONObject(RadioConfigUtils.DATA_TAG);
+
+						StationUsageObject stationUsageObject = (StationUsageObject) gson.fromJson(data.toString(), StationUsageObject.class);
+						List<StationUsageList> stationList = stationUsageObject.getStation_list();
+
+						stationUsageObject.setIana_id(info.getIana_id());
+						stationUsageObject.setSn(info.getSn());
+
+						StationUsageObject stationUsageObjectCache = ACUtil.<StationUsageObject> getPoolObjectBySn(stationUsageObject, StationUsageObject.class);
+						
+						DevOnlineObject devOnlineO = new DevOnlineObject();
+						devOnlineO.setIana_id(info.getIana_id());
+						devOnlineO.setSn(info.getSn());
+						devOnlineO = ACUtil.<DevOnlineObject>getPoolObjectBySn(devOnlineO, DevOnlineObject.class);
+						
+						if(devOnlineO == null)
+							break;
+						
+						if (stationUsageObjectCache == null) {
+							stationUsageObjectCache = new StationUsageObject();
+							stationUsageObjectCache.setIana_id(info.getIana_id());
+							stationUsageObjectCache.setSn(info.getSn());
+							stationUsageObjectCache.setDevice_id(devOnlineO.getDevice_id());
+							stationUsageObjectCache.setNetwork_id(devOnlineO.getNetwork_id());
+							stationUsageObjectCache.setOrganization_id(devOnlineO.getOrganization_id());
+							stationUsageObjectCache.setStation_list(new ArrayList<StationUsageList>());
+						} else {
+							// cater for the case the device is moved between networks or re-added after delete
+							stationUsageObjectCache.setDevice_id(devOnlineO.getDevice_id());
+							stationUsageObjectCache.setNetwork_id(devOnlineO.getNetwork_id());
+							stationUsageObjectCache.setOrganization_id(devOnlineO.getOrganization_id());
+						}
+						
+						ArrayList<StationUsageList> stationListCache = stationUsageObjectCache.getStation_list();
+						
+						int initialListSize = 0;
+						if (stationListCache != null) {
+							initialListSize = stationListCache.size();
+						} else {
+							stationListCache = new ArrayList<StationUsageList>();
+						}
+
+						ArrayList<StationUsageList> usageCacheLst = new ArrayList<StationUsageList>();
+						usageCacheLst.addAll(stationListCache);
+						
+
+						/*
+						 * Get station mac list from StationListObject
+						 */
+						StationListObject stationListObject = new StationListObject();
+						stationListObject.setIana_id(info.getIana_id());
+						stationListObject.setSn(info.getSn());
+						stationListObject = ACUtil.<StationListObject>getPoolObjectBySn(stationListObject, StationListObject.class);
+						List<StationList> stationMacList = null;
+						HashMap<String,StationList> stationMap = null;
+						if( stationListObject != null )
+						{
+							stationMacList = stationListObject.getStation_list();
+							stationMap = new HashMap<String,StationList>();
+							for(StationList station : stationMacList)
+							{
+								stationMap.put(station.getIp(), station);
+							}
+						}
+						
+						StationUsageList stationUsageCache = null;
+						if (stationList != null && !stationList.isEmpty()) { // stationList is from Json
+							for (StationUsageList stationUsage : stationList) {
+								boolean isFoundInCache = false;
+								for (int c = 0; c < initialListSize; c++) {
+									stationUsageCache = usageCacheLst.get(c);
+									// check for same usage data if both ip and timestamp are the same
+									if (stationUsage.getIp().compareTo(stationUsageCache.getIp()) == 0 && stationUsage.getTimestamp() == stationUsageCache.getTimestamp()) {
+										isFoundInCache = true;
+										stationUsageCache.setTx(stationUsage.getTx());
+										stationUsageCache.setRx(stationUsage.getRx());
+//										stationUsageCache.setTimestamp(stationUsage.getTimestamp());
+										break;
+									}
+								}
+								
+								if (!isFoundInCache) {
+									if( stationMap != null )
+									{
+										// find the station's MAC from stationListObject
+										StationList client = stationMap.get(stationUsage.getIp());
+										if(client != null)
+										{
+											stationUsage.setMac(client.getMac().toUpperCase());
+											stationUsage.setName(client.getName());
+											stationUsage.setType(client.getType());
+										}
+										// if not found, then just let it and search again in ReportConsolidate
+									}
+									usageCacheLst.add(stationUsage);
+								}
+							}
+						}
+
+						stationListCache = new ArrayList<StationUsageList>();
+						stationListCache.addAll(usageCacheLst);
+						stationUsageObjectCache.setStation_list(stationListCache);
+						
+						ACUtil.<StationUsageObject> cachePoolObjectBySn(stationUsageObjectCache, StationUsageObject.class);
+						break;
+					case PIPE_INFO_TYPE_STATION_Z:						
+						break;
+					case PIPE_INFO_TYPE_PEPVPN_ENDPOINT:
+						break;
+					case PIPE_INFO_TYPE_PEPVPN_PEER_LIST:
+						break;
+					case PIPE_INFO_TYPE_PEPVPN_PEER_DETAIL:
+						break;
+					case PIPE_INFO_TYPE_PEPVPN_TUNNEL_STAT:
+						break;
+					// case PIPE_INFO_TYPE_CONFIG_CHECKSUM:
+					// break;
+					case PIPE_INFO_TYPE_CONFIG_GET:
+						break;
+					case PIPE_INFO_TYPE_CONFIG_PUT:
+						break;
+					case PIPE_INFO_TYPE_FIRMWARE_PUT:
+						break;
+					case PIPE_INFO_TYPE_FEATURE_GET:						
+						break;
+					case PIPE_INFO_TYPE_CONFIG_UPDATE_AUTO_CHANNEL:
+						break;
+					case PIPE_INFO_TYPE_DUMMY_TEST:
+						break;
+					case PIPE_INFO_TYPE_SSID_DISCOVERY:
+						object = JSONObject.fromObject(info);
+						data = object.getJSONObject(RadioConfigUtils.DATA_TAG);
+						Json_DeviceNeighborList jsonDeviceNeighborList = gson.fromJson(data.toString(), Json_DeviceNeighborList.class);
+						DevOnlineObject devOnlineObj = new DevOnlineObject();
+						devOnlineObj.setIana_id(info.getIana_id());
+						devOnlineObj.setSn(info.getSn());
+						
+						devOnlineObj = ACUtil.getPoolObjectBySn(devOnlineObj, DevOnlineObject.class);
+						
+						if (jsonDeviceNeighborList != null){
+							DeviceNeighborSsidDiscoveryMessageHandler.doDeviceNeighborSsidDiscoveryMessage(devOnlineObj, jsonDeviceNeighborList);
+						} else {
+							if (devOnlineObj != null){
+								log.debugf("INDOORPOS20140519 - QueueCacheControl - PIPE_INFO_TYPE_SSID_DISCOVERY - jsonDeviceNeighborList is null!, iana: %s, sn: %s", devOnlineObj.getIana_id(), devOnlineObj.getSn());
+							} else {
+								log.debugf("INDOORPOS20140519 - QueueCacheControl - PIPE_INFO_TYPE_SSID_DISCOVERY - devOnlineObject is null, jsonDeviceNeighborList is null!");
+							}
+						}
+						
+						break;
+					case UNDEFINED:
+						/* temp parse developing incorrect type from WTP by key name */
+						String tmpType = null;
+						try {
+
+							JsonParser parser = new JsonParser();
+							JsonObject obj = parser.parse(json).getAsJsonObject();
+
+							tmpType = obj.get("type").toString().replace("\"", "");
+						} catch (NullPointerException e)
+						{
+							log.warn("json type is empty or incorrect json");
+						}
+						log.warn("Unknown report type from queue cache - " + type + "(" + tmpType + ") " + json);
+						break;
+
+					default:
+						log.warn("Shouldnt reach here " + type);
+						break;
+					}
+					
+					endtime = DateUtils.getUnixtime();
+					log.infof("processing %s type %s takes %d seconds", taskName, type, endtime - starttime);
+					
+					qtaskInfo.endCacheTask(taskInfoKey);
+				} 
+				catch (Exception eJson)
+				{
+					// log exception json
+					//logJson.error("eJson error=" + eJson.getMessage() + " json="+json, eJson);
+					log.error("error "+(json.length()<=100?json:json.substring(0, 100)), eJson);
+					//throw (eJson);
+					if(qtaskInfo.isStarted())
+						qtaskInfo.endCacheTask(taskInfoKey);
+					continue;
+				}
+			}
+		} catch (Exception e) {
+			
+			log.error("Exception, exit loop!" + e,e);
+		} finally {
+			setCounter(false);
+			
+			endtime = DateUtils.getUnixtime();
+			log.infof("persistQueueCache processing database %s takes %d seconds", taskName, endtime - globalstarttime);
+		}
+		
+		log.infof("persistQueueCache is successful! (counter=%d) %s queue.size=%d", counter, taskName, queue.size());
+	}
+	
+	public static void main(String args[])
+	{
+		HashMap<String, String> map = new HashMap<String,String>();
+		for( int i = 2500; i > 0 ; i-- )
+		{
+			map.put(new Date().getTime()+"|key"+i, "value");
+//			try {
+//				Thread.sleep(10);
+//			} catch (InterruptedException e) {
+//				// TODO Auto-generated catch block
+//				e.printStackTrace();
+//			}
+		}
+		
+		Set<String> set = map.keySet();
+		List<String> list = new ArrayList<String>();
+		list.addAll(set);
+		Collections.sort(list);
+		for(String key : list)
+			System.out.println(""+key);
+	}
+}

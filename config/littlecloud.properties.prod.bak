@@ -1,0 +1,117 @@
+# littlecloud webservice configuration
+com.littlecloud.ac.ACService.USER_REQ_AC_TO_WTP_FIFO=/var/run/ac/FIFO_AC_TO_WTP
+com.littlecloud.ac.ACService.USER_REQ_WTP_TO_AC_FIFO=/var/run/ac/FIFO_WTP_TO_AC
+com.littlecloud.ac.ACService.USER_REQ_AC_TO_WTP_FIFO.THREAD_POOL_SIZE=10
+com.littlecloud.ac.ACService.ROOT_CERT_PATH=/etc/littlecloud/ac/root.crt
+com.littlecloud.ac.ACService.CLIENT_CERT_PATH=/opt/nginx/conf/ssl/lc.peplink.com.key.pem
+com.littlecloud.ac.ACService.CLIENT_KEY=/opt/nginx/conf/ssl/lc.peplink.com.key
+com.littlecloud.ac.ACService.CLIENT_KEY_PWD=client_key_password
+com.littlecloud.ac.ACService.CN=${DOMAIN}
+
+# normal mode
+com.littlecloud.ac.ACService.OPMODE_NORMAL.rpt_enable=true
+com.littlecloud.ac.ACService.OPMODE_NORMAL.rpt_offset=0
+com.littlecloud.ac.ACService.OPMODE_NORMAL.rpt_period=60
+com.littlecloud.ac.ACService.OPMODE_NORMAL.evt_period=10
+com.littlecloud.ac.ACService.OPMODE_NORMAL.heartbeat=25
+com.littlecloud.ac.ACService.OPMODE_NORMAL.peer_dead=120
+
+# low bandwidth mode
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.rpt_enable=true
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.rpt_offset=0
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.rpt_period=3600
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.evt_period=60
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.heartbeat=25
+com.littlecloud.ac.ACService.OPMODE_LOWBAND.peer_dead=120
+
+# root or offline mode
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.rpt_enable=false
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.rpt_offset=0
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.rpt_period=3600
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.evt_period=60
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.heartbeat=25
+com.littlecloud.ac.ACService.OPMODE_NOREPORT.peer_dead=120
+
+
+# Bypass Expiry Check
+com.littlecloud.ac.ACService.BYPASS_WARRANTY_CHECK=1
+
+com.littlecloud.ac.ACServiceStartup.USER_REQ_AC_TO_WTP_FIFO.THREAD_POOL_SIZE=10
+
+cluster.auto.restart.minimum.second=120
+
+#The configuration for quartz scheduler
+
+quartz.schedule.check.interval=30
+quartz.schedule.check.url=http://localhost:8080/LittleCloud/report/consolidate
+
+quartz.schedule.email.interval=1
+
+#configuration for archive report raw data
+com.littlecloud.ac.ReportConsolidateService.ArchivePath=/mnt/archive/
+
+#in days
+com.littlecloud.ac.ReportConsolidateService.UsageReportKeepTime=1
+com.littlecloud.ac.ReportConsolidateService.GpsDataKeepTime=30
+
+#The configuration for alert service
+com.littlecloud.control.alertservices.util.AlertUtils.getEmailUrl=http://lb-rs-i.${DOMAIN}/private/root/api/show_admin_contacts
+com.littlecloud.control.alertservices.util.AlertUtils.getTemplateUrl=http://lb-rs-i.${DOMAIN}/private/root/api/compile_html
+
+#configuration for firmware upgrade
+com.littlecloud.ac.FirmwareUpdateService.RootDomain=lb-rs-i.${DOMAIN}
+com.littlecloud.ac.FirmwareUpdateService.getReleaseDetailUrl=/private/root/api/show_firmware_release
+com.littlecloud.ac.FirmwareUpdateService.emailDaysBeforeUpdate=14
+
+#configuration for idle offline checking
+com.littlecloud.ac.OfflineAlertCheckingService.idleThresholdNormal=8
+com.littlecloud.ac.OfflineAlertCheckingService.idleThresholdNormalLowBandwidth=64
+
+com.littlecloud.ac.ACService.SERVER_NAME=${HOSTNAME}
+
+quartz.mysql.addr=${MYSQL_ADDR}:${BSDB_PORT}
+quartz.mysql.user=${BSDB_QUARTZ_USER}
+quartz.mysql.passwd=${BSDB_QUARTZ_PASSWD}
+quartz.mysql.database=${BSDB_QUARTZ_DATABASE}
+
+alert.mysql.addr=${MYSQL_ADDR}:${BSDB_PORT}
+alert.mysql.user=${BSDB_ALERT_USER}
+alert.mysql.passwd=${BSDB_ALERT_PASSWD}
+alert.mysql.database=${BSDB_ALERT_DATABASE}
+
+quartz.schedule.upgrade.interval=60
+quartz.schedule.upgrade.url=http://localhost:8080/LittleCloud/firmware/checkUpgradeTimeReached
+quartz.schedule.idle.interval=15
+quartz.schedule.idle.url=http://localhost:8080/LittleCloud/report/idleCheck
+quartz.schedule.archive.url=http://localhost:8080/LittleCloud/report/archive
+quartz.schedule.config.update.check.interval=16
+quartz.schedule.config.update.check.url=http://localhost:8080/LittleCloud/devconfig/startConfigUpdate.action
+quartz.schedule.alertcheck.interval=1
+quartz.schedule.alertcheck.url=http://localhost:8080/LittleCloud/report/alertCheck
+
+quartz.schedule.check.upgrade.email.interval=60
+quartz.schedule.check.upgrade.email.url=http://localhost:8080/LittleCloud/firmware/checkUpgradeEmailTimeReached
+quartz.schedule.check.persist.cache.interval=60
+quartz.schedule.check.persist.cache.url=http://localhost:8080/LittleCloud/report/persistCache
+
+quartz.schedule.firmware.update.check.interval=5
+quartz.schedule.firmware.update.check.url=http://localhost:8080/LittleCloud/firmware/checkDeviceFirmwareUpdateJob
+
+quartz.schedule.device.usage.history.interval=60
+quartz.schedule.device.usage.history.url=http://localhost:8080/LittleCloud/report/usageHistoryArchive
+
+alert.server.addr=127.0.0.1
+alert.server.port=28300
+
+#configuration for FusionHub
+com.littlecloud.fusionhub.FusionHubProperties.FusionHubVerifyLicURL=http://lb-rs-i.${DOMAIN}/fusionhub/api/verify_fusion_hub_license
+com.littlecloud.fusionhub.FusionHubProperties.FusionHubDefaultSn=1824-C792-89C0-
+com.littlecloud.fusionhub.FusionHubProperties.FusionHubDefaultModel=FHBVM
+
+
+com.littlecloud.ac.ReportConsolidateService.HourlyUsageKeepTime=2
+com.littlecloud.ac.ReportConsolidateService.DailyUsageKeepTime=61
+
+#config application
+com.littlecloud.control.webservices.util.ConfigUtils.GROUP_MASTER_CFG_PATH=/mnt/run/config/master
+com.littlecloud.control.webservices.util.ConfigUtils.MAX_RETRY_CFG_APPLY=60

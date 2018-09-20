@@ -1,0 +1,187 @@
+package com.littlecloud.ac.handler;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.util.RootBranchRedirectManager;
+import com.littlecloud.ac.util.RootBranchRedirectManager.DeviceRedirectInfo;
+import com.littlecloud.ac.util.RootBranchRedirectManager.SERVER_MODE;
+import com.littlecloud.control.dao.root.RootBranchesDAO;
+import com.littlecloud.control.entity.root.RootBranchesTO;
+import com.littlecloud.control.json.model.Json_Devices;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.pool.utils.PropertyService;
+import com.littlecloud.utils.CryptoUtils;
+
+public class BranchServerRedirectionHandler {
+	
+	private static final Logger log = Logger.getLogger(OnlineStatusAndCustomEventHandler.class);
+	
+	private static final PropertyService<BranchServerRedirectionHandler> ps = new PropertyService<BranchServerRedirectionHandler>(BranchServerRedirectionHandler.class);
+	private static BranchServerRedirectionHandler instance = null;
+	
+	private final boolean branchRedirectionEnabled = ps.getString("branch.server.enabled").equalsIgnoreCase("true")?true:false;	
+	private String certPublic = null;
+	private String certPrivate = null;
+	private String certRoot = null;
+	private String certCn = null;
+	private Map<String, List<String>> deviceToBranchServersMap;
+	private final Integer maxLoadTimeInSec = 300;
+	private Integer loadTime = 0;
+	
+	public Map<String, List<String>> getDeviceToBranchServersMap() {
+		return deviceToBranchServersMap;
+	}
+
+	public static BranchServerRedirectionHandler getInstance() {
+		if (instance==null)
+			instance = new BranchServerRedirectionHandler();
+		
+		if (instance.isBranchredirectionenabled())
+			instance.reloadMapOnExpire();
+		
+		return instance;
+	}
+	
+	private BranchServerRedirectionHandler()
+	{
+		log.warnf("INFO BranchServerRedirectionHandler initializing");
+		
+		certRoot = CryptoUtils.readFromFileCharByChar(ps.getString("branch.CERT_CA"));
+		certPrivate = CryptoUtils.readFromFileCharByChar(ps.getString("branch.CERT_PRIVATE"));
+		certPublic = CryptoUtils.readFromFileCharByChar(ps.getString("branch.CERT_PUBLIC"));
+		certCn = ps.getString("branch.CERT_PEER_CN");
+		
+		log.warnf("INFO BranchServerRedirectionHandler initialized\n%s\n%s\n%s\n%s\n%s",
+				branchRedirectionEnabled,
+				certRoot,
+				certPrivate,
+				certPublic,
+				certCn);
+	}
+		
+	public boolean redirectDevLstToBranchIfRegistered(List<Json_Devices> jsonDevLst)
+	{
+		boolean result = true;
+		for (Json_Devices jsonDev:jsonDevLst)
+		{
+			if (!redirectDevToBranchIfRegistered(jsonDev.getIana_id(), jsonDev.getSn()))
+				result = false;
+		}		
+		return result;
+	}
+	
+	/**
+	 * @param ianaId
+	 * @param sn
+	 * @return	true - redirected<br>
+	 * 			false - not redirected
+	 */
+	public boolean redirectDevToBranchIfRegistered(Integer ianaId, String sn) {
+		List<String> branchServers;
+		
+		branchServers = deviceToBranchServersMap.get(createMapKey(ianaId, sn));
+		if (branchServers==null)
+			return false;
+		
+		if (branchRedirectionEnabled)
+		{
+			DeviceRedirectInfo info = new DeviceRedirectInfo();
+			info.setIana_id(ianaId);
+			info.setSn(sn);
+			info.setRedirectMode(SERVER_MODE.ROOT_SERVER_MODE);
+			info.setHostList(branchServers);
+			return RootBranchRedirectManager.sendRedirection(info);
+		}
+		else
+			return false;		
+	}
+	
+	private synchronized void reloadMapOnExpire() {
+		if (DateUtils.getUnixtime() - loadTime > maxLoadTimeInSec) {
+			log.warnf("INFO reloadMapOnExpire - expired %d - %d > %d", DateUtils.getUnixtime(), loadTime, maxLoadTimeInSec);
+			reloadMap();
+		}
+	}
+	
+	public void reloadMap() {
+		log.warnf("Reloading Device to Branch Servers Map ...");
+		loadTime = DateUtils.getUnixtime();
+		deviceToBranchServersMap = initDeviceToBranchServersMap();		
+		log.warnf("Loaded Device to Branch Servers Map");
+	}
+	
+	public Map<String, List<String>> updateMap(Integer ianaId, String sn, List<String> hostLst) {
+		log.warnf("adding dev %d %s to map for hostLst %s ...", ianaId, sn, hostLst);
+		deviceToBranchServersMap.put(createMapKey(ianaId, sn), hostLst);
+		return deviceToBranchServersMap;
+	}
+	
+	public Map<String, List<String>> removeMap(Integer ianaId, String sn) {
+		log.warnf("remove dev %d %s from map ...", ianaId, sn);
+		deviceToBranchServersMap.remove(createMapKey(ianaId, sn));
+		return deviceToBranchServersMap;
+	}
+	
+	/**
+	 * 
+	 * @return null on exception
+	 */
+	private Map<String, List<String>> initDeviceToBranchServersMap() {
+		log.warnf("initDeviceToBranchServersMap ...");
+		
+		Map<String, List<String>> result = new HashMap<String, List<String>>();
+		
+		RootBranchesDAO rootBranchDAO;
+		try {
+			rootBranchDAO = new RootBranchesDAO();
+			List<RootBranchesTO> rbLst = rootBranchDAO.getActiveRedirectionList();
+			if (rbLst==null)
+				return result;
+			
+			for (RootBranchesTO rb:rbLst)
+			{
+				result.put(createMapKey(rb.getIana_id(), rb.getSn()), Arrays.asList(rb.getAc1(), rb.getAc2()));
+			}
+			
+			loadTime = DateUtils.getUnixtime();
+			
+		} catch (Exception e) {
+			log.fatal("Fail to load device redirection map", e);
+			return null;
+		}		
+		
+		return result; 
+	}
+	
+	private String createMapKey(Integer ianaId, String sn)
+	{
+		return StringUtils.join(String.valueOf(ianaId),"_",sn);
+	}
+	
+	/******** getters and setters ********/	
+	public boolean isBranchredirectionenabled() {
+		return branchRedirectionEnabled;
+	}
+
+	public String getCertPublic() {
+		return certPublic;
+	}
+
+	public String getCertPrivate() {
+		return certPrivate;
+	}
+
+	public String getCertRoot() {
+		return certRoot;
+	}
+
+	public String getCertCn() {
+		return certCn;
+	}
+}

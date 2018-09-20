@@ -1,0 +1,10 @@
+DB_JDBC_DRIVER=com.mysql.jdbc.Driver
+DB_URL=jdbc:mysql://rsdb.dev.pepwave.com:3306?characterEncoding=UTF-8&useUnicode=true
+DB_USER=rs-backend
+DB_PASSWORD=rs-backend
+DB_INIT_CONNECTION=10
+DB_MAX_CONNECTION=20
+DB_MIN_CONNECTION=5
+
+STATEMENT_TIMEOUT=30
+TRIM_POOL_INTERVAL=300

@@ -1,0 +1,217 @@
+package com.littlecloud.control.dao;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.entity.report.DailyDeviceSsidUsages;
+import com.littlecloud.pool.model.DailyDevSsidUsageResult;
+import com.littlecloud.pool.utils.Utils;
+import com.littlecloud.utils.CalendarUtils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+import com.peplink.api.db.util.DBUtil;
+
+public class DailyDeviceSsidUsagesDAO extends BaseDAO<DailyDeviceSsidUsages, Integer>{
+	private static final Logger log = Logger.getLogger(DailyDeviceSsidUsagesDAO.class);
+	
+	public DailyDeviceSsidUsagesDAO() throws SQLException{
+		super(DailyDeviceSsidUsages.class);
+	}
+	
+	public DailyDeviceSsidUsagesDAO(String orgId) throws SQLException{
+		super(DailyDeviceSsidUsages.class, orgId);
+	}
+	
+	public DailyDeviceSsidUsagesDAO(String orgId, boolean readonly) throws SQLException{
+		super(DailyDeviceSsidUsages.class, orgId, readonly);
+	}
+	
+	public DailyDeviceSsidUsages findByNetworkIdDeviceIdEssidEncryptionDateRange(Integer networkId, Integer deviceId, String essid, String encryption, Calendar calFrom, Calendar calTo) throws SQLException{
+		if (log.isDebugEnabled()){
+			log.debugf("DailyDeviceSsidUsagesDAO.findByNetworkIdDeviceIdEssidEncryptionDateRange() - networkId: %s, device_id: %s, essid: %s, "
+					+ "encryption: %s, calFrom: %s, calTo: %s", networkId, deviceId, essid, encryption, calFrom.getTime(), calTo.getTime());
+		}
+		DBConnection session = getSession();
+		DailyDeviceSsidUsages dailyDeviceSsidUsage = null;
+		try {
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DailyDeviceSsidUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, networkId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, deviceId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("essid", com.peplink.api.db.query.Criteria.EQ, essid);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("encryption", com.peplink.api.db.query.Criteria.EQ, encryption);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addBetween("datetime", CalendarUtils.convertCalendar2MySqlDateString(calFrom), CalendarUtils.convertCalendar2MySqlDateString(calTo));
+			dailyDeviceSsidUsage = (DailyDeviceSsidUsages)query.executeQueryAsSingleObject();
+		} catch (SQLException e){
+			throw e;
+		} finally{
+			if (session!=null){ 
+				session.close();
+			}
+		}
+		return dailyDeviceSsidUsage;
+	}
+	
+	public DailyDeviceSsidUsages findByDeviceIdEssidEncryptionTime(Integer network_id, Integer device_id, String Essid, String Encryption, Integer unixtime) throws SQLException{
+		log.debug("getting " + this.getClass().getSimpleName() + " instance with network_id: " + network_id + " and device_id: "+ device_id + " and Essid: "+ Essid + " and Encryption: "+ Encryption + " and unixtime: "+ unixtime );
+		DBConnection session = getSession();
+		try {
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DailyDeviceSsidUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, network_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, device_id);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("essid", com.peplink.api.db.query.Criteria.EQ, Essid);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("encryption", com.peplink.api.db.query.Criteria.EQ, Encryption);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", com.peplink.api.db.query.Criteria.EQ, unixtime);
+			
+			
+			return (DailyDeviceSsidUsages)query.executeQueryAsSingleObject();
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if (session!=null) session.close();
+		}
+	}
+	
+	public List<DailyDevSsidUsageResult> getUsageListByNetworkNTime(Integer network_id, Integer startTime, Integer endTime) throws SQLException{
+		log.debug("getting device total client count" + this.getClass().getSimpleName() + "  with network_id: "+network_id +" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try {
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			rs = query.executeQuery("SELECT essid, encryption, sum(tx), sum(rx) FROM "+dbname+".daily_device_ssid_usages where network_id ="+network_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by essid, encryption;");
+			
+			List<DailyDevSsidUsageResult> resultList = new ArrayList<DailyDevSsidUsageResult>();
+			DailyDevSsidUsageResult result = null;
+			String col;
+			while (rs.next()){
+				int i=1;
+				result = new DailyDevSsidUsageResult();
+				col = rs.getString(i++);
+				result.setEssid(col);
+				col = rs.getString(i++);
+				result.setEncryption(col);
+				col = rs.getString(i++);
+				result.setTx(Double.valueOf(col));
+				col = rs.getString(i++);
+				result.setRx(Double.valueOf(col));
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+		
+	}
+		
+	public List<DailyDevSsidUsageResult> getUsageListByNetworkNTimeWithDevId(Integer network_id, Integer device_id, Integer startTime, Integer endTime) throws SQLException{
+		log.debug("getting device total client count" + this.getClass().getSimpleName() + "  with network_id: "+network_id +" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try {
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			rs = query.executeQuery("SELECT essid, encryption, sum(tx), sum(rx) FROM "+dbname+".daily_device_ssid_usages where network_id = "+network_id+" and device_id = "+device_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by essid, encryption;");
+			
+			List<DailyDevSsidUsageResult> resultList = new ArrayList<DailyDevSsidUsageResult>();
+			DailyDevSsidUsageResult result = null;
+			String col;
+			while (rs.next()){
+				int i=1;
+				result = new DailyDevSsidUsageResult();
+				col = rs.getString(i++);
+				result.setEssid(col);
+				col = rs.getString(i++);
+				result.setEncryption(col);
+				col = rs.getString(i++);
+				result.setTx(Double.valueOf(col));
+				col = rs.getString(i++);
+				result.setRx(Double.valueOf(col));
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+		
+	}
+	
+	public boolean saveDeviceSsidDailyUsagesList(List<DailyDeviceSsidUsages> deviceSsidDailyUsageList) throws SQLException{
+		boolean isSave = false;
+		try{
+			DBUtil dbUtil = DBUtil.getInstance();
+			dbUtil.startSession();
+			DBConnection batchConnection = dbUtil.getConnection(false, orgId, false);
+			if (deviceSsidDailyUsageList != null && deviceSsidDailyUsageList.size() > 0){
+				for (DailyDeviceSsidUsages dailyDeviceSsidUsages: deviceSsidDailyUsageList){
+					batchConnection.addBatch(dailyDeviceSsidUsages);
+				}
+			}
+			batchConnection.commit();
+			batchConnection.close();
+			if(dbUtil.isSessionStarted()){
+				dbUtil.endSession();
+			}
+			isSave = true;
+		}
+		catch(Exception e){
+			log.error("DailyDeviceSsidUsagesDAO.saveDeviceSsidDailyUsagesList() - Exception: ", e);
+		}
+		finally{
+			if(dbUtil.isSessionStarted()) {
+				dbUtil.endSession();
+			}
+		}
+		return isSave;
+	}
+	
+}

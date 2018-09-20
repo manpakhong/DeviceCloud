@@ -1,0 +1,33 @@
+.noActivityListSpan{
+
+}
+.captivePortalAccessLogSpan{
+	
+}
+.noHouseKeepLogSpan{
+	
+}
+table, td, th {
+	border: 1px solid black;
+}
+.activitiesTable, .accessLogTable{
+	font-size: small;
+}
+.houseKeepLogTable{
+
+}
+.alertSpan{
+	color: red;
+}
+.captivePortalActivityResultDiv{
+	
+}
+.captivePortalHealthResultDiv{
+	
+}
+.captivePortalAccessLogDiv{
+	
+}
+.captivePortalHouseKeepLogDiv{
+	
+}

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE struts PUBLIC
+        "-//Apache Software Foundation//DTD Struts Configuration 2.0//EN"
+        "http://struts.apache.org/dtds/struts-2.0.dtd">
+
+<struts>
+
+    <package name="report" namespace="/report" extends="default">
+
+		<action name="consolidate" class="com.littlecloud.pool.SchedulerAction" method="scheduleConsolidateReport">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="persistCache" class="com.littlecloud.pool.SchedulerAction" method="schedulePersistReportFromCache">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="archive" class="com.littlecloud.pool.SchedulerAction" method="scheduleArchiveRawData">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="alertCheck" class="com.littlecloud.pool.SchedulerAction" method="scheduleCheckOfflineAlert">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="idleCheck" class="com.littlecloud.pool.SchedulerAction" method="scheduleCheckIdleDevice">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="usageHistoryArchive" class="com.littlecloud.pool.SchedulerAction" method="schedulerArchiveDeviceUsageHistory">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="generateDevLocationDates" class="com.littlecloud.pool.SchedulerAction" method="generateDevLocationDates">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="fetchUsageHistory" class="com.littlecloud.pool.SchedulerAction" method="schedulerFetchUsageHistory">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="dpiUsageArchive" class="com.littlecloud.pool.SchedulerAction" method="schedulerProcessDpiUsages">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="persistLastLocation" class="com.littlecloud.pool.SchedulerAction" method="schedulerPersistsLastLocation">
+            <result>/blank.jsp</result>
+        </action>  
+        <action name="schedulerDoHouseKeeping" class="com.littlecloud.pool.SchedulerAction" method="schedulerDoHouseKeeping">
+            <result>/blank.jsp</result>
+        </action>            
+        <action name="persistClientName" class="com.littlecloud.pool.SchedulerAction" method="schedulerPersistClientName">
+            <result>/blank.jsp</result>
+        </action> 
+    </package>
+</struts>

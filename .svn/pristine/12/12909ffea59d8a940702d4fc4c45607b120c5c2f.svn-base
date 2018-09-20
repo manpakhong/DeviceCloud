@@ -1,0 +1,137 @@
+package com.littlecloud.services;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.DeviceMonthlyUsagesDAO;
+import com.littlecloud.control.entity.report.DailyDeviceUsages;
+import com.littlecloud.control.entity.report.DeviceMonthlyDpiUsages;
+import com.littlecloud.control.entity.report.DeviceMonthlyUsages;
+import com.littlecloud.utils.CalendarUtils;
+
+public class DeviceMonthlyUsagesMgr {
+	private static final Logger log = Logger.getLogger(DeviceMonthlyUsagesMgr.class);
+	private DeviceMonthlyUsagesDAO deviceMonthlyUsagesDao;
+	private String orgId;
+	public DeviceMonthlyUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	private void init(){
+		try{
+			deviceMonthlyUsagesDao = new DeviceMonthlyUsagesDAO(this.orgId);
+		} catch (Exception e){
+			log.error("DeviceMonthlyUsagesMgr.init() - ", e);
+		}
+	}
+	
+	public List<Integer> getDistinctWanList(Integer netId, Integer deviceId){
+		List<Integer> distinctWanIdList = null;
+		try{
+			distinctWanIdList = deviceMonthlyUsagesDao.getDistinctWanIdsWithDeviceId(netId, deviceId);
+		} catch (Exception e){
+			log.error("DeviceMonthlyUsagesMgr.init() - ", e);
+		}
+		return distinctWanIdList;
+	}
+	
+	public List<DeviceMonthlyUsages> getRecordsWithDeviceIdAndWanIdV2(Integer networkId, Integer deviceId, Integer wanId,Integer unixtime){
+		List<DeviceMonthlyUsages> uList= null;
+		try{
+			uList = deviceMonthlyUsagesDao.getRecordsWithDeviceIdAndWanIdV2(networkId, deviceId, wanId, unixtime);
+		} catch (Exception e){
+			log.error("DeviceMonthlyUsagesMgr.getRecordsWithDeviceIdAndWanIdV2() - ", e);
+		}
+		
+		return uList;
+	}
+	
+	public boolean saveDeviceMonthlyUsagesList(List<DeviceMonthlyUsages> deviceMonthlyUsageList){
+		boolean isSaved = false;
+		try{
+			isSaved = deviceMonthlyUsagesDao.saveDeviceMonthlyUsagesList(deviceMonthlyUsageList);
+		} catch (Exception e){
+			log.error("DeviceMonthlyUsagesMgr.saveDeviceMonthlyUsagesList() - ", e);
+		}
+		return isSaved;
+	}
+	
+	public DeviceMonthlyUsages findByNetworkIdDeviceIdTimeAndWanId(Integer network_id, Integer device_id, Date datetime, Integer wan_id ){
+		DeviceMonthlyUsages deviceMonthlyUsage = null;
+		try{
+			deviceMonthlyUsage = deviceMonthlyUsagesDao.findByNetworkIdDeviceIdTimeAndWanId(network_id, device_id, datetime, wan_id);
+		} catch (Exception e){
+			log.error("DeviceMonthlyUsagesMgr.findByNetworkIdDeviceIdTimeAndWanId() - Exception: ", e);
+		}
+		return deviceMonthlyUsage;
+	}
+	
+	public boolean doDeviceMonthlyUsagesConsolidation(Calendar calFrom, Calendar calTo){
+		boolean isDone = false;
+		try{
+			Calendar utcCalendar = CalendarUtils.getUtcCalendarToday();
+			Calendar endCalendar = CalendarUtils.getUtcCalendarToday();
+			try{
+				if (log.isInfoEnabled()){
+					log.info("DeviceMonthlyUsagesMgr.doDeviceMonthlyUsagesConsolidation() - start: " + utcCalendar.getTime());
+				}
+				
+				DeviceDailyUsagesMgr deviceDailyUsagesMgr = new DeviceDailyUsagesMgr(orgId);
+
+				long tstart = System.currentTimeMillis();
+				if (log.isInfoEnabled()){
+					log.info("Consolidate monthly device usages for org = "+orgId);
+				}
+							
+				List<DailyDeviceUsages> deviceMonthlyRecordList = deviceDailyUsagesMgr.getDeviceMonthlyRecords(calFrom, calTo);
+				if (deviceMonthlyRecordList != null && deviceMonthlyRecordList.size() > 0){
+					DeviceMonthlyUsagesMgr deviceMonthlyUsagesMgr = new DeviceMonthlyUsagesMgr(orgId);
+					List<DeviceMonthlyUsages> deviceMonthlyUsageList = new ArrayList<DeviceMonthlyUsages>();
+					for(DailyDeviceUsages monthlyUsage : deviceMonthlyRecordList){
+						DeviceMonthlyUsages monthly_usage = new DeviceMonthlyUsages();
+						monthly_usage.setDevice_id(monthlyUsage.getDeviceId());
+						monthly_usage.setNetwork_id(monthlyUsage.getNetworkId());
+						monthly_usage.setWan_id(monthlyUsage.getWan_id());
+						monthly_usage.setWan_name(monthlyUsage.getWan_name());
+						monthly_usage.setRx(monthlyUsage.getRx());
+						monthly_usage.setTx(monthlyUsage.getTx());
+						monthly_usage.setDatetime(monthlyUsage.getDatetime());
+						monthly_usage.setUnixtime(monthlyUsage.getUnixtime());
+						
+						DeviceMonthlyUsages preDevMonthlyUsage = findByNetworkIdDeviceIdTimeAndWanId(monthly_usage.getNetwork_id(), monthly_usage.getDevice_id(), monthly_usage.getDatetime(), monthly_usage.getWan_id());
+						if( preDevMonthlyUsage != null ) {
+							monthly_usage.setId(preDevMonthlyUsage.getId());
+						}
+						monthly_usage.replace();
+						deviceMonthlyUsageList.add(monthly_usage);
+					}
+					if (deviceMonthlyUsageList.size() > 0){
+						boolean areSaved = deviceMonthlyUsagesMgr.saveDeviceMonthlyUsagesList(deviceMonthlyUsageList);
+						if (!areSaved){
+							log.warnf("DeviceMonthlyUsagesMgr.doDeviceMonthlyUsagesConsolidation() - areSaved: %s", areSaved);
+						}
+					}
+					
+				}
+				long tused = (System.currentTimeMillis() - tstart) / 1000;
+				endCalendar = CalendarUtils.getUtcCalendarToday();
+				if (log.isInfoEnabled()){
+					log.infof("End Consolidate monthly device usage for org = %s, tused = %d", orgId, tused);
+				}
+			} catch( Exception e ) {
+				log.error("Error in accessing report consolidate job table 31- " + e,e);
+			} finally {
+				log.infof("startProcessMonthlyUsages end, end time = %s", endCalendar.getTime());
+			}
+			return isDone;
+		} catch (Exception e){
+			log.error("DeviceMonthlyUsagesMgr.doDeviceMonthlyUsagesConsolidation() - Exception: ", e);
+		}
+		return isDone;
+	}
+	
+}

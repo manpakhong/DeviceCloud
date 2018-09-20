@@ -1,0 +1,367 @@
+package com.littlecloud.control.dao;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.criteria.CaptivePortalActivitiesCriteria;
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.entity.CaptivePortalActivity;
+import com.littlecloud.control.entity.CaptivePortalDailyUsage;
+import com.littlecloud.control.entity.CaptivePortalDailyUserUsage;
+import com.littlecloud.control.entity.report.ClientMonthlyUsages;
+import com.littlecloud.utils.CommonUtils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+import com.peplink.api.db.query.Condition;
+import com.peplink.api.db.query.Criteria;
+
+public class CaptivePortalActivitiesDAO extends BaseDAO<CaptivePortalActivity, Integer>{
+	private static final Logger log = Logger.getLogger(CaptivePortalActivitiesDAO.class);
+	
+
+	public CaptivePortalActivitiesDAO(String orgId) throws SQLException {
+		super(CaptivePortalActivity.class, orgId, false);
+	}
+	public CaptivePortalActivitiesDAO(String orgId, boolean readonly) throws SQLException {
+		super(CaptivePortalActivity.class, orgId, readonly);
+	}// end CaptivePortalActivitiesDAO(String orgId)
+	
+	@SuppressWarnings("unchecked")
+	public List<CaptivePortalActivity> getCaptivePortalActivities(String ssid) throws SQLException{
+		if (ssid == null){
+			log.warnf("CaptivePortalActivitiesDAO - getCaptivePortalActivities, ssid is null!");
+			return null;
+		} 
+		DBConnection session = getSession();
+		try {
+			DBQuery query = session.createQuery();
+			query.setQueryClass(persistentClass);
+			query.addCriteria("ssid", Criteria.EQ, ssid);
+			return (List<CaptivePortalActivity>) query.executeQueryAsObject();
+		} catch (SQLException e) {
+			throw e;
+		} finally {
+			if (session!=null) session.close();
+		} // end try ... catch ... finally ...					
+	} // end getCaptivePortalSessions
+	
+	public List<CaptivePortalActivity> getCaptivePortalActivities(CaptivePortalActivitiesCriteria criteria) throws SQLException{
+		List<CaptivePortalActivity> resultList = null;
+		DBConnection session = getSession();
+		try{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(persistentClass);
+			
+			int criteriaCount = 0;
+			
+			if (criteria.getActivityType() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("activity_type", Criteria.EQ, criteria.getActivityType());
+				criteriaCount++;
+			}
+			
+			if (criteria.getBandwidthUsedLessThanOrEqual() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("bandwidth_used", Criteria.LTE, criteria.getBandwidthUsedLessThanOrEqual());
+				criteriaCount++;
+			}
+			
+			if (criteria.getBandwidthUsedOverOrEqual() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("bandwidth_used", Criteria.GTE, criteria.getBandwidthUsedOverOrEqual());
+				criteriaCount++;
+			}
+			
+			if (criteria.getBssid() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("bssid", Criteria.EQ, criteria.getBssid());
+				criteriaCount++;
+			}
+			
+			if (criteria.getClientMac() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("client_mac", Criteria.EQ, criteria.getClientMac());
+				criteriaCount++;
+			}
+			
+			if (criteria.getCpId() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("cp_id", Criteria.EQ, criteria.getCpId());
+				criteriaCount++;
+			}
+			
+			if (criteria.getCreateAtFrom() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("created_at", Criteria.GTE, criteria.getCreateAtFrom());
+				criteriaCount++;
+			}
+			
+			if (criteria.getCreateAtTo() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("created_at", Criteria.LTE, criteria.getCreateAtTo());
+				criteriaCount++;
+			}
+			
+			if (criteria.getIanaId() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("iana_id", Criteria.EQ, criteria.getIanaId());
+				criteriaCount++;
+			}
+			
+			if (criteria.getId() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("id", Criteria.EQ, criteria.getId());
+				criteriaCount++;
+			}
+			
+			if (criteria.getSn() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("sn", Criteria.EQ, criteria.getSn());
+				criteriaCount++;
+			}
+			
+			if (criteria.getSsid() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("ssid", Criteria.EQ, criteria.getSsid());
+				criteriaCount++;
+			}
+			
+			if (criteria.getStatus() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("status", Criteria.EQ, criteria.getStatus());
+				criteriaCount++;
+			}
+			
+			if (criteria.getTimeUsedLessThanOrEqual() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+
+				query.addCriteria("time_used", Criteria.LTE, criteria.getTimeUsedLessThanOrEqual());
+				criteriaCount++;
+			}
+			
+			if (criteria.getTimeUsedOverOrEqual() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+
+				query.addCriteria("time_used", Criteria.GTE, criteria.getTimeUsedOverOrEqual());
+				criteriaCount++;
+			}
+			
+			if (criteria.getUsername() != null){
+				if (criteriaCount > 0){
+					query.addCondition(Condition.AND);
+				}
+				query.addCriteria("username", Criteria.EQ, criteria.getUsername());
+				criteriaCount++;
+			}
+			
+			query.addOrderBy("created_at", false);
+			query.addOrderBy("iana_id");
+			query.addOrderBy("sn");
+			query.addOrderBy("client_mac");
+			resultList = (List<CaptivePortalActivity>) query.executeQueryAsObject();
+			
+		} catch (SQLException e){
+			throw e;
+		} finally{
+			if (session!=null) {
+				session.close();
+			}
+		}
+		
+		return resultList;
+	} // end getCaptivePortalActivities
+		
+	public List<CaptivePortalDailyUsage> generateCaptivePortalDailyUsagesList(Calendar calFrom, Calendar calTo, Integer networkId) throws SQLException{
+		if (calFrom == null || calTo == null){
+			log.warnf("CAPPORTRPT20141014 - CaptivePortalActivitiesDAO.generateCaptivePortalDailyUsageReportsList, dateFrom or dateTo is null!");
+			return null;
+		} 
+		List<CaptivePortalDailyUsage> result = new ArrayList<CaptivePortalDailyUsage>();
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		
+		try{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(ClientMonthlyUsages.class);
+			String dbname = query.getDBName();
+			
+			StringBuilder sbSql = new StringBuilder();
+			sbSql.append("select ");
+			sbSql.append("date(cpa.created_at) as report_date ");
+			sbSql.append(", unix_timestamp(cpa.created_at) as unixtime ");
+			sbSql.append(", cpa.cp_id " );
+			sbSql.append(", sum(cpa.bandwidth_used) as bandwidth_used ");
+			sbSql.append(", sum(cpa.time_used) as time_used ");
+			sbSql.append(", count(cpa.id) as session_count ");
+			sbSql.append("from ");
+			sbSql.append(dbname + ".captive_portal_activities cpa ");
+			sbSql.append("inner join ");
+			sbSql.append(dbname + ".captive_portals cp ");
+			sbSql.append("on ");
+			sbSql.append("cp.id = cpa.cp_id ");
+			sbSql.append("where ");
+			sbSql.append("cpa.activity_type = '" + CaptivePortalActivity.ACTIVITY_TYPE_DISCONNECT + "' ");
+			sbSql.append("and ");
+			sbSql.append("cpa.bandwidth_used > 0 ");
+			sbSql.append("and ");
+			sbSql.append("cpa.time_used > 0 ");
+			sbSql.append("and ");
+			sbSql.append("cpa.cp_id > 0 ");
+			sbSql.append("and ( ");
+			sbSql.append("date(cpa.created_at) between '" + CommonUtils.convertCalendar2MySqlDateString(calFrom) + "') "); // 'YYYY-MM-DD HH:MM:SS'
+			sbSql.append("and ");
+			sbSql.append("'" + CommonUtils.convertCalendar2MySqlDateString(calTo) + "' ");
+			sbSql.append(") ");
+			
+			if (networkId != null){
+				sbSql.append("and ");
+				sbSql.append("cp.network_id = " + networkId + " ");
+			}
+			
+			
+			sbSql.append("group by ");
+			sbSql.append("cpa.cp_id, ");
+			sbSql.append("cpa.created_at ");
+			sbSql.append(";");
+			rs = query.executeQuery(sbSql.toString());
+			while (rs.next()){
+				CaptivePortalDailyUsage cpdReport = new CaptivePortalDailyUsage();
+				cpdReport.setBandwidthUsed(CommonUtils.number2BigDecimal((Number) rs.getObject("bandwidth_used")));
+				cpdReport.setCpId(CommonUtils.number2Integer((Number) rs.getObject("cp_id")));
+				cpdReport.setSessionCount(CommonUtils.number2Integer((Number) rs.getObject("session_count")));
+				cpdReport.setTimeUsed(CommonUtils.number2BigDecimal((Number) rs.getObject("time_used")));
+				cpdReport.setUnixtime(CommonUtils.number2Integer((Number) rs.getObject("unixtime")));
+				cpdReport.setReportDate((Date) rs.getObject("report_date"));
+				result.add(cpdReport);
+			}			
+		}
+		catch( Exception e ){
+			throw e;
+		}
+		finally{
+			if(rs != null){
+				rs.close();
+				rs = null;				
+			}
+			if( session != null ){
+				session.close();
+				session = null;
+			}
+		}
+		return result;			
+	} // end generateCaptivePortalDailyUsageReportsList
+	
+	public List<CaptivePortalDailyUserUsage> generateCaptivePortalDailyUserUsagesList(Calendar calFrom, Calendar calTo) throws SQLException{
+		if (calFrom == null || calTo == null){
+			log.warnf("CAPPORTRPT20141014 - CaptivePortalActivitiesDAO.generateCaptivePortalDailyUserUsagesList, dateFrom or dateTo is null!");
+			return null;
+		} 
+		List<CaptivePortalDailyUserUsage> result = new ArrayList<CaptivePortalDailyUserUsage>();
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		
+		try{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(ClientMonthlyUsages.class);
+			String dbname = query.getDBName();
+			
+			StringBuilder sbSql = new StringBuilder();
+			sbSql.append("select ");
+			sbSql.append("date(cpa.created_at) as report_date ");
+			sbSql.append(", unix_timestamp(cpa.created_at) as unixtime ");
+			sbSql.append(", cpa.cp_id " );
+			sbSql.append(", cpa.username " );
+			sbSql.append(", cp.user_group_id " );
+			sbSql.append(", sum(cpa.bandwidth_used) as bandwidth_used ");
+			sbSql.append(", sum(cpa.time_used) as time_used ");
+			sbSql.append(", count(cpa.id) as session_count ");
+			sbSql.append("from ");
+			sbSql.append(dbname + ".captive_portal_activities cpa ");
+			sbSql.append("inner join ");
+			sbSql.append(dbname + ".captive_portals cp ");
+			sbSql.append("on cp.id = cpa.cp_id ");
+			sbSql.append("where ");
+			sbSql.append("cpa.activity_type = '" + CaptivePortalActivity.ACTIVITY_TYPE_DISCONNECT + "' ");
+			sbSql.append("and ");
+			sbSql.append("cpa.bandwidth_used > 0 ");
+			sbSql.append("and ");
+			sbSql.append("cpa.time_used > 0 ");
+			sbSql.append("and ");
+			sbSql.append("cpa.cp_id > 0 ");
+			sbSql.append("and ( ");
+			sbSql.append("date(cpa.created_at) between date('" + CommonUtils.convertCalendar2MySqlDateString(calFrom) + "') "); // 'YYYY-MM-DD HH:MM:SS'
+			sbSql.append("and ");
+			sbSql.append("date('" + CommonUtils.convertCalendar2MySqlDateString(calTo) + "') ");
+			sbSql.append(") ");
+			sbSql.append("group by ");
+			sbSql.append("cpa.cp_id, ");
+			sbSql.append("date(cpa.created_at), ");
+			sbSql.append("cpa.username, ");
+			sbSql.append("cp.user_group_id ");
+			sbSql.append(";");
+			rs = query.executeQuery(sbSql.toString());
+			while (rs.next()){
+				CaptivePortalDailyUserUsage cpdReport = new CaptivePortalDailyUserUsage();
+				cpdReport.setBandwidthUsed(CommonUtils.number2BigDecimal((Number) rs.getObject("bandwidth_used")));
+				cpdReport.setUsername((String) rs.getObject("username"));
+				cpdReport.setUserGroupId((String) rs.getObject("user_group_id"));
+				cpdReport.setCpId(CommonUtils.number2Integer((Number) rs.getObject("cp_id")));
+				cpdReport.setSessionCount(CommonUtils.number2Integer((Number) rs.getObject("session_count")));
+				cpdReport.setTimeUsed(CommonUtils.number2BigDecimal((Number) rs.getObject("time_used")));
+				cpdReport.setUnixtime(CommonUtils.number2Integer((Number) rs.getObject("unixtime")));
+				cpdReport.setReportDate((Date) rs.getObject("report_date"));
+				result.add(cpdReport);
+			}			
+		}
+		catch( Exception e ){
+			throw e;
+		}
+		finally{
+			if(rs != null){
+				rs.close();
+				rs = null;				
+			}
+			if( session != null ){
+				session.close();
+				session = null;
+			}
+		}
+		return result;			
+	} // end generateCaptivePortalDailyUserUsagesList
+}

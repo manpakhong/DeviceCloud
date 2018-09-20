@@ -1,0 +1,190 @@
+package com.littlecloud.control.webservices;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.log4j.Logger;
+
+import com.littlecloud.ac.health.info.WebServiceInfo;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.pool.control.QueueCacheControl;
+
+public class WsTasksInfo 
+{
+	boolean started;
+	private static Logger log = Logger.getLogger(WsTasksInfo.class);
+	
+	public boolean isStarted() {
+		return started;
+	}
+
+	public void setStarted(boolean started) {
+		this.started = started;
+	}
+
+	public String startTask(String orgId, String network_id, String device_id, String ws_name)
+	{
+		Date start_time = DateUtils.getUtcDate();
+		String key = start_time.getTime()+"|"+orgId+"_"+network_id+"_"+device_id+"|"+ws_name;
+		
+		WebServiceInfo value = new WebServiceInfo();
+		value.setKey(key);
+		value.setMethod(ws_name);
+		value.setStatus("running");
+		value.setStart_time(start_time);
+		value.setRequest(orgId+"_"+network_id+"_"+device_id);
+		value.setOrgId(orgId);
+		value.setNetwork_id(network_id);
+		value.setDevice_id(device_id);
+		value.setThread_id(Thread.currentThread().getId());
+		ConcurrentHashMap<String, WebServiceInfo> tasksMap = BaseWs.getWsTaskMap();
+		
+		if( tasksMap.size() >= 5000 )
+		{
+			this.cleanMap(tasksMap);
+		}
+		
+		tasksMap.put(key, value);
+		this.started = true;
+		
+		return key;
+	}
+	
+	public void endTask(String key)
+	{
+		ConcurrentHashMap<String,WebServiceInfo> tasksMap = BaseWs.getWsTaskMap();
+		WebServiceInfo value = tasksMap.get(key);
+		this.started = false;
+		Date endTime = DateUtils.getUtcDate();
+		long diff = endTime.getTime()-value.getStart_time().getTime();
+		
+		value.setStatus("completed");
+		value.setEnd_time(endTime);
+		value.setDuration(diff);
+		if(tasksMap.size() >= 5000)
+		{
+			this.cleanMap(tasksMap);
+		}
+		
+		tasksMap.put(key, value);
+	}
+	
+	public void cleanMap(ConcurrentHashMap<String,WebServiceInfo> map)
+	{
+		Set<String> kSet = map.keySet();
+		List<String> list = new ArrayList<String>();
+		list.addAll(kSet);
+		Collections.sort(list);
+		int loop = map.size() / 2;
+		for(int i = 0; i < loop ; i++)
+		{
+			String key = list.get(i);
+			WebServiceInfo value = map.get(key);
+			if( value != null )
+			{
+				if(value.getStatus()!=null && value.getStatus().equals("completed"))
+				{
+					map.remove(key);
+				}
+			}
+			else
+			{
+				// log.warn("Value of " + key + " is null");
+				map.remove(key);
+			}
+		}
+	}
+	
+	public static String getLastNWsInfos(Integer limit)
+	{
+		ConcurrentHashMap<String,WebServiceInfo> tasksMap = BaseWs.getWsTaskMap();
+		Set<String> kSet = tasksMap.keySet();
+		List<String> keyLst = new ArrayList<String>();
+		keyLst.addAll(kSet);
+		Collections.sort(keyLst);
+		Collections.reverse(keyLst);
+		int i = 0;
+		StringBuffer result = new StringBuffer();
+//		result.append("WS Tasks Size : ");
+//		result.append(kSet.size());
+		result.append("<br><br>");
+		result.append("<font color=\"red\">");
+		result.append("Top ");
+		result.append(limit);
+		result.append(" Tasks Info:");
+		result.append("</font>");
+		result.append("<br>");
+		for(String key : keyLst)
+		{
+			i++;
+			WebServiceInfo value = tasksMap.get(key);
+			
+			if(value != null && value.getStatus()!=null)
+			{
+				if( value.getStatus().equals("running")  )
+				{
+					result.append("<font color=\"green\">");
+					result.append("WebServiceInfo "+i);					
+					result.append(value.toString());
+					result.append("<br>");
+					result.append("</font>");
+				}
+				else if(value.getStatus().equals("completed"))
+				{
+					result.append("<font color=\"blue\">");
+					result.append("WebServiceInfo "+i);
+					result.append("</font>");					
+					result.append(value.toString());
+					result.append("<br>");
+				}
+			}
+			
+			if( i == limit )
+				break;
+		}
+		return result.toString();
+	}
+	
+	public static String getRunningWsInfos(Integer limit)
+	{
+		ConcurrentHashMap<String,WebServiceInfo> tasksMap = BaseWs.getWsTaskMap();
+		Set<String> kSet = tasksMap.keySet();
+		List<String> keyLst = new ArrayList<String>();
+		keyLst.addAll(kSet);
+		Collections.sort(keyLst);
+		Collections.reverse(keyLst);
+		int i = 0;
+		StringBuffer result = new StringBuffer();
+		result.append("WS Tasks Size : ");
+		result.append(kSet.size());
+		result.append("<br><br>");
+		result.append("<font color=\"red\">");		
+		result.append(" Running Tasks Info:");
+		result.append("</font>");
+		result.append("<br>");
+		result.append("<font color=\"green\">");
+		for(String key : keyLst)
+		{
+			
+			WebServiceInfo value = tasksMap.get(key);
+			
+			if(value != null && value.getStatus()!=null)
+			{
+				if( value.getStatus().equals("running")  )
+				{
+					i++;					
+					result.append("WebServiceInfo "+i);					
+					result.append(value.toString());
+					result.append("<br>");
+					
+				}				
+			}			
+		}
+		result.append("</font>");
+		return result.toString();
+	}
+}

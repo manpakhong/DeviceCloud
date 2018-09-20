@@ -1,0 +1,118 @@
+<%@ page language="java" contentType="text/html; charset=UTF-8"
+    pageEncoding="UTF-8"%>
+<%@page import="com.littlecloud.control.dao.criteria.CaptivePortalActivitiesCriteria"%>
+<%@page import="com.littlecloud.control.dao.criteria.CaptivePortalAccessLogCriteria"%>
+<%@page import="com.littlecloud.services.CaptivePortalActivitiesMgr"%>
+<%@page import="java.util.Date" %>
+<%@page import="java.util.Calendar" %>
+<%@page import="com.littlecloud.util.CalendarUtils" %>
+<%@page import="com.littlecloud.helpers.JspParameterHelper" %>
+<%@page import="com.littlecloud.controllers.FifoReplayMonitorController" %>
+<%@page import="com.littlecloud.mongo.daos.criteria.FifoAcMessageCriteria" %>
+<%@page import="java.util.Arrays" %>
+<%@page import="java.util.List" %>
+<%@page import="java.util.ArrayList" %>
+<%@page import="com.littlecloud.util.CommonUtils" %>
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+	<script type="text/javascript" src="javascript/jquery.js"></script>
+	<script type="text/javascript" src="javascript/jquery-ui.js"></script>
+	<script type="text/javascript" src="javascript/commonUtils.js"></script>
+	<script type="text/javascript" src="javascript/ajaxOverlayLoader.js"></script>	
+	<link href="css/ajaxOverlayLoader.css" rel="stylesheet" type="text/css"/>	
+	<link href="css/jquery-ui.css" rel="stylesheet" type="text/css"/>
+	<script src="javascript/fifoReplay.js" type="text/javascript"></script>
+	<link href="css/fifoReplay.css" rel="stylesheet" type="text/css"/>
+<title>FIFO Replay</title>
+</head>
+<body id="body">
+	<div class="contentDiv">
+		<%
+			String timestampFrom = request.getParameter("createAtFrom");
+			String timestampTo = request.getParameter("createAtTo");
+			String orgId = request.getParameter("orgId");
+			String[] messageTypeArray = null;
+			if (request.getParameterValues("messageType") != null){
+				messageTypeArray = request.getParameterValues("messageType");
+			}
+			String networkIdString = request.getParameter("networkId");
+			Integer networkId = null;
+			if (networkIdString != null && CommonUtils.isInteger(networkIdString)){
+				networkId = new Integer(networkIdString);
+			}
+			String sn = request.getParameter("sn");
+		%>
+		<div class="resultContentDiv1">
+		<h3>Input parameters</h3>
+		<div>
+		<%
+			if (timestampFrom != null){
+				out.print("timestamp from:" + timestampFrom + "<br/>");
+				out.print("<input type=\"hidden\" value=\"" + timestampFrom +"\" class=\"fTimestampFrom\" />");
+			}
+
+			if (timestampTo != null){
+				out.print("timestamp to:" + timestampTo + "<br/>");
+				out.print("<input type=\"hidden\" value=\"" + timestampTo + "\" class=\"fTimestampTo\" />");
+			}
+
+			if (orgId != null){
+				out.print("orgId:" + orgId + "<br/>");
+				out.print("<input type=\"hidden\" value=\"" + orgId + "\" class=\"fOrgId\" />");
+			}
+			if (messageTypeArray != null){
+				for (String messageType: messageTypeArray){
+					out.print("messageType:" + messageType + "<br/>");
+					out.print("<input type=\"hidden\" value=\"" + messageType + "\" class=\"fMessageType\" />");
+				}
+			}
+			if (networkId != null){
+				out.print("netwrokId:" + networkId + "<br/>");
+				out.print("<input type=\"hidden\" value=\"" + networkId + "\" class=\"fNetworkId\" />");
+			}
+			if (sn != null){
+				out.print("sn:" + sn + "<br/>");
+				out.print("<input type=\"hidden\" value=\"" + sn + "\" class=\"fSn\" />");
+			}
+		%>
+		</div>
+		<h3>Operations</h3>
+		<div>
+			<input class="normalButton fifoReplayButton" type="button" value="fifo replay"></input><span class="fifoReplayResult"></span><br/>
+			<input class="normalButton fifoExport2TextFileButton" type="button" value="export to file"></input>
+		</div>
+		</div>
+		<div class="resultContentDiv">
+		<%
+			Calendar calTimestampFrom =
+			JspParameterHelper.convertMonitorPostDateTimeString2Date(timestampFrom,
+			JspParameterHelper.CALENDAR_MIN_DAY_VALUE);
+			Calendar calTimestampTo =
+			JspParameterHelper.convertMonitorPostDateTimeString2Date(timestampTo,
+			JspParameterHelper.CALENDAR_MAX_DAY_VALUE);
+			
+			FifoAcMessageCriteria criteria = new FifoAcMessageCriteria();
+			criteria.setDateFrom(calTimestampFrom.getTime());
+			criteria.setDateTo(calTimestampTo.getTime());
+			criteria.setLimit(25);
+			if (sn != null){
+				List<String> snList = new ArrayList<String>();
+				snList.add(sn);
+				criteria.setSnList(snList);
+			}
+			if (messageTypeArray != null){
+				criteria.setMessageTypeList(Arrays.asList(messageTypeArray));
+			}
+
+			FifoReplayMonitorController fifoController = new FifoReplayMonitorController();
+			String resultHtml = fifoController.getFifoReplayHtml(criteria, orgId, networkId);
+			out.print(resultHtml);
+		 %>
+		 </div>
+	</div>
+
+</body>
+</html>

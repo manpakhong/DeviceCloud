@@ -1,0 +1,330 @@
+package com.littlecloud.control.json.model.config.util;
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.SQLException;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.apache.commons.io.IOUtils;
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.DeviceConfigurationsDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.entity.DeviceConfigurations;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.json.model.config.JsonConf;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.control.json.util.JsonUtils;
+import com.littlecloud.pool.utils.PropertyLoader;
+import com.littlecloud.utils.CryptoUtils;
+
+public class ConfigBackupUtils {
+	private static final int LIMIT_CONFIG_FILE_SIZE_BYTE = 1048576; // 1MB
+	private static final int MAX_DAY_OF_RECORDS_BF_TODAY = 10; // If more than 10 days of records, remove the earliest day records found (Maximum 10 days records)
+	private static final int MAX_RECORD_OF_THE_DAY = 100; // If more than 100 records on that day, remove the earliest record found (Maximum 100 records a day)
+	private static final Logger log = Logger.getLogger(ConfigBackupUtils.class);
+	
+	public static boolean backupDeviceConfigByContent(String configGetObjectMd5, String content, String orgId, Integer devId){
+
+		try{
+			byte[] data;
+			data = content.getBytes();
+			backupDeviceConfig(configGetObjectMd5, data, orgId, devId);
+		} catch (Exception e){
+			log.error("L20140122 - exception", e);
+		}
+		return true;
+	}
+	
+	public static boolean backupDeviceConfig(String configGetObjectMd5, String filename, String orgId, Integer devId){
+		try{
+			Path path = Paths.get(filename);
+			byte[] data;
+			data = Files.readAllBytes(path);
+			backupDeviceConfig(configGetObjectMd5, data, orgId, devId);
+		} 
+		catch (Exception e){
+			log.error("L20140122 - exception", e);
+		}
+		log.debug("L20140122 - complete backupDeviceConfig. devId:" + devId.toString() + " orgId:" + orgId);
+		return true;
+	}
+	
+	public static boolean backupDeviceConfig(String configGetObjectMd5, byte[] data, String orgId, Integer devId){
+		try{
+			if (RadioConfigUtils.getConfigTypeFromDevId(orgId, devId) != JsonConf.CONFIG_TYPE.MAX)
+			{	
+				/* AP config backup is not supported yet */
+				return true;
+			}
+			DeviceConfigurationsDAO devConfsDAO = new DeviceConfigurationsDAO(orgId);
+			Date today = new Date();
+			Calendar calTodayTrim = Calendar.getInstance();
+			calTodayTrim.setTime(today);
+			calTodayTrim = DateUtils.trimCalendar2Minimum(calTodayTrim);
+//			int unixTimeTodayTrim = DateUtils.getUnixtime(calTodayTrim);
+			
+			Calendar calTodayNoTrim = Calendar.getInstance();
+			calTodayNoTrim.setTime(today);
+
+			int unixTimeTodayNoTrim = (int) (today.getTime() / 1000);
+			
+			
+			final boolean bReadOnlyDb = true;
+			NetworksDAO netDAO = new NetworksDAO(orgId, bReadOnlyDb);
+			Networks net = netDAO.getNetworksByDevId(devId);
+			
+			Date todayTrim = DateUtils.getUtcDate(calTodayTrim.getTime(), DateUtils.getTimezoneFromId(Integer.valueOf(net.getTimezone())));
+			
+//			Calendar utTime = Calendar.getInstance();	
+//			long now_timemillis =utTime.getTimeInMillis();
+//			int now_unixtime = (int)(now_timemillis/1000);
+			String hashString = configGetObjectMd5;
+			Boolean isSameMd5Found = false;
+			
+			if (data.length <= LIMIT_CONFIG_FILE_SIZE_BYTE){	
+				// today list keep 100 records only, record(s) at 100 and after will be deleted.
+				List<DeviceConfigurations> devConfsTodayList = devConfsDAO.getDeviceConfigurations(devId, todayTrim);
+				int listSize = devConfsTodayList.size();
+				
+				isSameMd5Found = isLastConfigFileMd5TheSame(configGetObjectMd5, orgId,devId);
+				log.debug("L20140122 - devId: " + devId.toString() + " isSameMd5Found: " + isSameMd5Found.toString());
+
+				for (int i = (listSize - 1); i < listSize; i++){					
+					if (!isSameMd5Found && i >= (MAX_RECORD_OF_THE_DAY - 1)){
+						log.debug("L20140122 - max no. of config file record reached, devId: " + devId.toString() + ", configFile id: " + devConfsTodayList.get(0).getId() + " is deleted!");
+						devConfsDAO.delete(devConfsTodayList.get(0));
+					}
+				}
+//				if (devConfsTodayList.size() >= 100){
+//					for (int i = 99; i < devConfsTodayList.size(); i++){
+//						DeviceConfigurations devConfs2BeDeleted = devConfsTodayList.get(i);
+//						devConfsDAO.delete(devConfs2BeDeleted);
+//					}
+//				}
+				
+				// If more than 10 days of records, remove the earliest day records found (Maximum 10 days records)
+				List<DeviceConfigurations> devConfsDaysBeforeN = devConfsDAO.getDeviceConfigurationsBeforeDays(devId, MAX_DAY_OF_RECORDS_BF_TODAY);
+				if (devConfsDaysBeforeN != null){
+					for (DeviceConfigurations devConfs2BeDeleted: devConfsDaysBeforeN){
+						log.debug("L20140122 - day before of " + MAX_DAY_OF_RECORDS_BF_TODAY + ", config file(s) are deleted, devId: " + devId.toString() + ", configFile id: " + devConfs2BeDeleted.getId() + " is deleted!");
+						devConfsDAO.delete(devConfs2BeDeleted);					
+					}
+				}
+				DeviceConfigurations devConfs = new DeviceConfigurations();
+				devConfs.setTableName("device_configurations");
+				devConfs.setDeviceId(devId);
+				devConfs.setFileContent(data);
+				devConfs.setBackupTime(unixTimeTodayNoTrim);
+				devConfs.setCreatedAt(unixTimeTodayNoTrim);
+				devConfs.setMd5(hashString);
+	
+				devConfs.setFileSize(data.length);
+				
+				if (!isSameMd5Found){
+					devConfsDAO.save(devConfs);
+					log.debug("L20140122 - config file saved. id:" + devConfs.getId() + ", devId:" + devId.toString() + ", org:" + orgId);
+				}
+				else{
+					log.debug("L20140122 - config file not saved -  same file found today!");
+					return false;
+				}
+			} 
+			else{
+				log.debug("L20140122 - config file not saved - file size larger than Max allowance!");
+				return false;
+			}
+		} catch (Exception e){
+			if (e instanceof IOException){
+				log.error("L20140122 - IO error", e);
+			} else if (e instanceof SQLException){
+				log.error("L20140122 - config file save failed", e);
+			} else {
+				log.error("L20140122 - backupDeviceConfigByContent(), exception:", e);
+			}
+		}
+		return true;
+	}
+	
+	public static boolean isLastConfigFileMd5TheSame(String configGetObjectMd5, String orgId,Integer devId){
+		boolean isSameMd5Found = false;
+		Date today = new Date();
+		Calendar calTodayTrim = Calendar.getInstance();
+		calTodayTrim.setTime(today);
+		calTodayTrim = DateUtils.trimCalendar2Minimum(calTodayTrim);
+//		int unixTimeTodayTrim = DateUtils.getUnixtime(calTodayTrim);
+		log.debugf("L20140122 - isLastConfigFileMd5TheSame() - orgId: %s, devId: %s, configGetObjectMd5: %s", orgId, devId, configGetObjectMd5);
+//		final boolean bReadOnlyDb = true;
+		try{
+//			NetworksDAO netDAO = new NetworksDAO(orgId, bReadOnlyDb);
+//			Networks net = netDAO.getNetworksByDevId(devId);
+			
+			Calendar calTodayNoTrim = Calendar.getInstance();
+			calTodayNoTrim.setTime(today);
+			DeviceConfigurationsDAO devConfsDAO = new DeviceConfigurationsDAO(orgId);
+			List<DeviceConfigurations> devConfsList = devConfsDAO.getDeviceConfigurationsList(devId);
+			int listSize = devConfsList.size();
+			log.debugf("L20140122 - listSize of devConfsTodayList: %s, orgId: %s, devId: %s, configGetObjectMd5: %s", listSize, orgId, devId, configGetObjectMd5);
+			if (listSize > 0){
+				DeviceConfigurations devConfsLast = devConfsList.get(listSize-1);
+//				log.debug("L20140122 - isLastConfigFileMd5TheSame devId:" + devId.toString() +  " orgId:" + orgId + "result: " + isSameMd5FoundTheSameDay + ", devConfsLast md5: "+ devConfsLast.getMd5() + " vs from ac md5: " + configGetObjectMd5);				
+				if (configGetObjectMd5.equalsIgnoreCase(devConfsLast.getMd5())){
+					isSameMd5Found = true;
+					log.debug("L20140122 - isLastConfigFileMd5TheSame devId:" + devId.toString() +  " orgId:" + orgId + "result: " + isSameMd5Found + ", devConfsLast md5: "+ devConfsLast.getMd5() + " vs from ac md5: " + configGetObjectMd5);				
+				}
+			}	
+			log.debugf("L20140122 - isSameMd5FoundTheSame:%s ,orgId: %s, devId: %s, configGetObjectMd5: %s" ,isSameMd5Found, listSize, orgId, devId, configGetObjectMd5);
+		}catch (Exception e){
+			log.error("L20140122 - ", e);
+		}
+		return isSameMd5Found;
+	}
+	
+	
+	
+	public static boolean getDeviceConfigAndSave2GivenPath(String orgId, Integer devId, String path){
+		
+		log.debugf("getDeviceConfigAndSave2GivenPath (%s, %d, %s)", orgId, devId, path);
+		
+		boolean isDone = false;
+		OutputStream outputStream = null;
+		InputStream inputStream = null;
+		try{
+			DeviceConfigurationsDAO devConfsDAO = new DeviceConfigurationsDAO(orgId);
+			DeviceConfigurations devConfigurations = devConfsDAO.getLatestDeviceConfigurations(devId);
+			
+			if (devConfigurations != null && devConfigurations.getFileContent() != null){
+				boolean isTheTargetSameMd5WithDb = false;
+				byte[] file_content = devConfigurations.getFileContent();
+				
+				inputStream = new ByteArrayInputStream(file_content);
+				
+				File writeFile = new File(path);
+				
+				// assume stream is base64
+				if (writeFile.exists() && !writeFile.isDirectory()){
+					
+					InputStream writeFileInStream = new FileInputStream(writeFile);
+					
+					byte[] inputStreamByteArray = IOUtils.toByteArray(inputStream);
+
+					
+					if (writeFileInStream != null){
+						byte[] writeFileInStreamByteArray = IOUtils.toByteArray(writeFileInStream);
+						if (inputStreamByteArray != null && writeFileInStreamByteArray != null){
+							if (Arrays.equals(inputStreamByteArray, writeFileInStreamByteArray)){
+								isTheTargetSameMd5WithDb = true;
+							}
+						} else {
+							log.warnf("L20140122 - inputStreamByteArray is null or writeFileInStreamByteArray is/are null!!!, getDeviceConfigAndSave2GivenPath (%s, %d, %s)", orgId, devId, path);
+						}
+						writeFileInStreamByteArray = null;
+					}
+					inputStreamByteArray = null;
+					inputStream.close();
+					inputStream = null;
+					writeFileInStream.close();
+					writeFileInStream = null;
+				}
+
+				
+				if (!isTheTargetSameMd5WithDb){
+					if (writeFile.exists()){
+						writeFile.setWritable(true);
+						boolean success = writeFile.delete();
+						if (!success){
+							log.warnf("L20140122 - !isTheTargetSameMd5WithDb,  - file cannot be delete!!! getDeviceConfigAndSave2GivenPath (%s, %d, %s)", orgId, devId, path);
+						}
+					}
+					
+					writeFile = new File(path);
+					outputStream = new FileOutputStream(writeFile);
+					
+					int read = 0;
+					byte[] bytes = new byte[1024];
+					
+					if (file_content != null){
+						log.debugf("L20140122 - !isTheTargetSameMd5WithDb, getDeviceConfigAndSave2GivenPath (%s, %d, %s), file_content.length:%s", orgId, devId, path, file_content.length);
+					}
+										
+					inputStream = new ByteArrayInputStream(file_content);
+					while ((read = inputStream.read(bytes)) != -1){
+						log.debugf("L20140122 - !isTheTargetSameMd5WithDb, while loopse getDeviceConfigAndSave2GivenPath (%s, %d, %s), read:%s", orgId, devId, path, read);
+						outputStream.write(bytes, 0, read);
+					}
+					
+
+				} 
+			} else {
+				log.warnf("L20140122 - devConfigurations is null!!!, getDeviceConfigAndSave2GivenPath (%s, %d, %s)", orgId, devId, path);
+			}
+			isDone = true;
+		}catch (Exception e){
+			if (e instanceof IOException){
+				log.error("L20140122 - save failed", e);
+			}
+			else if (e instanceof SQLException){
+				log.error("L20140122 - getDeviceConfigAndSave2GivenPath - SQL exception error", e);
+			} else{
+				log.error("L20140122 - getDeviceConfigAndSave2GivenPath - Exception ", e);
+			}
+			isDone = false;
+		} finally {
+			if (outputStream != null){
+				try {
+					outputStream.close();
+				} catch (Exception e){
+					log.error("L20140122 finally cannot closed - ", e);
+				}
+			}
+			if (inputStream != null){
+				try {
+					inputStream.close();
+				} catch (Exception e){
+					log.error("L20140122 finally cannot closed - ", e);
+				}
+			}
+		}
+		
+		return isDone;
+	}
+	
+	
+	public static void main(String[] args) {
+//		ConfigBackupUtils confBkUtils = new ConfigBackupUtils();
+		
+//		String propertyPath = System.getProperties().getProperty("db.properties");
+		// testing
+		File dir = new File("C:\\Windows\\System32");
+		int count = 0;
+		String orgId = "xoxcXd";
+		int devId = 1;
+		
+		PropertyLoader.getInstance();	
+		DateUtils.loadTimeZones(); 
+
+		for (File child: dir.listFiles()){
+//			if (child.length() < LIMIT_CONFIG_FILE_SIZE_BYTE){
+
+				System.out.println(devId + ":" + child.length() + ":" + child.getAbsolutePath());
+				ConfigBackupUtils.backupDeviceConfig("vvee" + count, child.getAbsolutePath(), orgId, devId);
+				count++;
+//			}
+		}
+//		String filename = "c:\\Temp\\20140102_b310hw1_18243AF61280.conf";
+//		Integer deviceId = 0;
+//		ConfigBackupUtils.backupDeviceConfig(filename,"xoxcXd", deviceId);
+
+	}
+}

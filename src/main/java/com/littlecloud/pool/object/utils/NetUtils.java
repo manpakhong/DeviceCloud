@@ -1,0 +1,757 @@
+package com.littlecloud.pool.object.utils;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+import org.apache.commons.beanutils.PropertyUtils;
+import org.jboss.logging.Logger;
+
+import com.littlecloud.ac.util.ACUtil;
+import com.littlecloud.control.dao.DevicesDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.pool.object.DevicesObject;
+import com.littlecloud.pool.object.DevicesTrimObject;
+import com.littlecloud.pool.object.NetInfoObject;
+import com.littlecloud.pool.object.OrgInfoObject;
+import com.littlecloud.pool.object.OrgInfoObject.NetIdMapKey;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+
+public class NetUtils {
+
+	private static Logger log = Logger.getLogger(NetUtils.class);
+
+	private static final Integer RELOAD_IN_SEC = 86400;
+	
+	private enum OP {
+		SAVE, DELETE, SAVEORUPDATE
+	};
+
+	private static final int RELOAD_MAX_RETRY = 2;
+	private static final Lock lock = new ReentrantLock();
+	private static AtomicInteger lockCount = new AtomicInteger();	
+
+	/*REVAMP DAO*/
+	public static Devices getDevices(String orgId, Integer ianaId, String sn)
+	{		
+		return getDevicesBySn(orgId, ianaId, sn, false);
+	}
+	
+//	public static Devices getDevices(String orgId, Integer netId, Integer ianaId, String sn) {
+//		return getDevices(orgId, netId, ianaId, sn, false);
+//	}
+	
+	//public static Devices getDevices(String orgId, Integer netId, Integer ianaId, String sn, boolean reload)
+	public static Devices getDevicesBySn(String orgId, Integer ianaId, String sn, boolean reload)
+	{
+		Integer netId = null;
+		
+		Devices dev = null;
+		DevicesObject devObj = NetUtils.getDevicesObject(ianaId, sn);
+		if (devObj!=null)
+		{
+			try {
+				dev = new Devices();
+				PropertyUtils.copyProperties(dev, devObj);
+//				dev = (Devices) devObj;
+			} catch (Exception e) {
+				log.error("Fail to create dev from devObj(1) "+devObj, e);
+			}			
+		}
+		else
+		{
+			log.warnf("DevicesObject org %s dev %d %s is not found in cache! ", orgId, ianaId, sn);
+			if (reload)
+			{
+				log.warnf("DevicesObject org %s dev %d %s is not found in cache! try to reload from db!", orgId, ianaId, sn);				
+				try{					
+					netId = OrgInfoUtils.lookupDevicesNetIdBySn(orgId, ianaId, sn);					
+					if (netId != null)
+					{
+						NetInfoObject netInfo = NetUtils.getNetInfoObject(orgId, netId);
+						if (netInfo!=null)
+						{						
+							devObj = NetUtils.getDevicesObject(ianaId, sn);
+							if (devObj!=null)
+							{
+								/* first load */
+								try {
+									dev = new Devices();
+									PropertyUtils.copyProperties(dev, devObj);
+//									dev = (Devices) devObj;
+									return dev;
+								} catch (Exception e) {
+									log.error("Fail to create dev from devObj(2) "+devObj, e);
+								}			
+							}
+							else
+							{
+								/* after first load, reload active */
+								if (reloadActiveDeviceToCache(orgId, null, ianaId, sn, false))
+								{
+									devObj = NetUtils.getDevicesObject(ianaId, sn);
+									if (devObj!=null)
+									{
+										try {
+											dev = new Devices();
+											PropertyUtils.copyProperties(dev, devObj);
+//											return dev;
+//											dev = (Devices) devObj;
+											return dev;
+										} catch (Exception e) {
+											log.error("Fail to create dev from devObj(3) "+devObj, e);
+										}			
+									}
+									else
+									{
+										//PERFORMANCE
+										log.errorf("PERFORMANCE devObj %d %s fails to reload to cache", ianaId, sn);
+									}
+								}
+								else
+								{
+									log.warnf("fail to reloadActiveDeviceToCache(1)");
+								}
+							}
+						}
+						else
+						{
+							log.warnf("netInfo is null for orgId %s netId %d", orgId, netId);							
+						}
+					}
+					else
+					{
+						log.warnf("dev %d %s cannot find netId from OrgInfo", ianaId, sn);
+						if (!reloadActiveDeviceToCache(orgId, null, ianaId, sn, true))
+						{
+							log.warnf("fail to reloadActiveDeviceToCache(2)");
+						}
+					}
+				} catch (Exception e){
+					log.errorf("Fail to get dev from db for org %s dev %d %s ", orgId, ianaId, sn);
+				}				
+			}
+		}
+		return dev;
+	}
+	
+	public static Devices getDevicesWithoutNetId(String orgId, Integer devId)
+	{
+		return getDevicesWithoutNetId(orgId, devId, false);
+	}
+	
+	public static Devices getDevicesWithoutNetId(String orgId, Integer devId, boolean isReload)
+	{
+		Integer netId = null;
+		Devices dev = null;
+		
+		if (devId == 0)
+			return null;
+		
+		netId = OrgInfoUtils.lookupDevicesNetIdByDevId(orgId, devId);
+		if (netId == null)
+		{
+			log.errorf("orgId %s dev %d cannot find netId, reload from db", orgId, devId);
+			try{
+				DevicesDAO devicesDao = new DevicesDAO(orgId);
+				dev = devicesDao.findById(devId);
+				if(dev!=null && dev.isActive()) {
+					// There is something mismatch between db and cache as NetId == null but device is exists in db
+					// It is likely that OrgInfoObject is not correct, so force reload OrgInfoObject
+					log.warnf("getDevicesWithoutNetId: likely db/cache out-sync and reload OrgInfoObject for %s %d ", orgId, devId);
+					OrgInfoUtils.reload(orgId);
+				}
+			} catch (Exception e){
+				log.error("getDevicesWithoutNetId e="+e, e);
+			}
+			return dev;
+		}
+		
+		dev = NetUtils.getDevices(orgId, netId, devId, isReload);		
+		return dev;
+	}
+	
+
+//	public static Devices getDevices(String orgId, Integer netId, Integer devId) {
+//		return getDevices(orgId, netId, devId, false);
+//	}
+	
+	public static Devices getDevices(String orgId, Integer netId, Integer devId, boolean reload)
+	{
+		NetInfoObject netO = getNetInfoObject(orgId, netId);
+		List<DevicesTrimObject> devTrimLst = new ArrayList<DevicesTrimObject>();
+		
+		if (netO==null || netO.getDevInfoMap()==null)
+			return null;
+		
+		if (netO.getDevInfoMap()!=null && netO.getDevInfoMap().values()!=null && netO.getDevInfoMap().values().size()!=0)
+			devTrimLst.addAll(netO.getDevInfoMap().values());
+		
+		for (DevicesTrimObject devTrim:devTrimLst)
+		{
+			if (devTrim.getId().intValue()==devId.intValue())
+			{
+				return getDevicesBySn(orgId, devTrim.getIanaId(), devTrim.getSn(), true);
+			}
+		}
+
+		return null;
+	}
+
+	public static List<Devices> getDeviceLstByNetId(String orgId, Integer netId)
+	{
+		List<Devices> devLst = null;
+
+		NetInfoObject netO = getNetInfoObject(orgId, netId);
+		if (netO==null)
+			return new ArrayList<Devices>();
+		
+		devLst = netO.getDevicesLst(orgId);
+
+		if (devLst == null)
+			devLst = new ArrayList<Devices>();
+
+		return devLst;
+	}
+
+	public static List<Devices> getDeviceLstByDevId(String orgId, Integer netId, List<Integer> devIds)
+	{
+		if (devIds==null)
+			return new ArrayList<Devices>();
+		
+		List<Devices> devLst = null;
+
+		NetInfoObject netO = getNetInfoObject(orgId, netId);
+		List<Devices> allDevices = netO.getDevicesLst(orgId);
+
+		devLst = new ArrayList<Devices>();
+		if( allDevices != null )
+		{
+			for( Devices dev : allDevices )
+			{
+				if( devIds.contains(dev.getId()) )
+				{
+					devLst.add(dev);
+				}
+			}
+		}
+		
+		return devLst;
+	}
+	
+	public static void updateNetworkToCache(Devices dev, String orgId, Integer fromNet, Integer toNet)
+	{
+		if (dev==null || toNet==null)
+			log.errorf("Either dev %s or toNet %d is null", dev, fromNet, toNet);
+
+		if (fromNet!=null)
+			NetUtils.deleteDevices(orgId, fromNet, dev);
+		
+		NetUtils.saveOrUpdateDevices(orgId, toNet, dev);		
+		OrgInfoUtils.saveOrUpdateDevices(orgId, dev.getId(), dev.getIanaId(), dev.getSn(), toNet);
+	}
+	
+	public static boolean reload(String orgId, Integer netId) throws Exception 
+	{
+		NetInfoObject netObj = new NetInfoObject(orgId, netId);
+		netObj = ACUtil.getPoolObjectBySn(netObj, NetInfoObject.class);
+		if (netObj!=null)
+		{
+			netObj.setLoaded(false);
+			NetUtils.putNetInfoObject(netObj);
+			return true;
+		}
+		
+		return false;
+	}
+	
+	private static boolean reloadActiveDeviceToCache(String orgId, Integer devId, Integer ianaId, String sn, boolean isUpdateOrgInfo) throws Exception {
+		
+		log.debugf("reloadActiveDeviceToCache is called with orgId %s devId %d ianaId %d sn %s isUpdateOrgInfo %s",
+				orgId, devId, ianaId, sn, isUpdateOrgInfo);
+		
+		DevicesTrimObject devTrim = null;
+		
+		DevicesDAO devDAO = new DevicesDAO(orgId, true);
+		Devices dev = null;
+		
+		if (devId != null)
+		{
+			dev = devDAO.findById(devId);
+		}
+		else 
+		{
+			dev = devDAO.findBySn(ianaId, sn);
+		}
+		
+		if (dev == null || !dev.isActive() || dev.getNetworkId()==0)
+		{
+			log.warnf("dev %s %d to reload is in invalid (%s)", orgId, devId, dev);
+			return false;
+		}
+		
+		NetInfoObject netO = getNetInfoObject(orgId, dev.getNetworkId());
+		if (netO == null) {
+			log.errorf("NetInfo for orgId %s devId %d does not exist", orgId, devId);
+			return false;
+		}
+		else if (!netO.isLoaded())
+		{
+			log.warnf("NetInfo for orgId %s is not loaded yet.", orgId);
+			return false;
+		}
+		
+		Map<Integer, DevicesTrimObject> devObjLst = netO.getActDevices().getDevInfoMap();
+		if (devObjLst==null)
+		{
+			/* not reload for this case */
+			return false;
+		}
+		
+		devTrim = new DevicesTrimObject(dev.getId(), dev.getIanaId(), dev.getSn(), dev.getNetworkId());
+		//devObjLst.add(devTrim);
+		devObjLst.put(devTrim.getId(), devTrim);
+		
+		DevicesObject devObj = NetUtils.createDevicesObjectFromDev(dev);
+		NetUtils.putDevicesObject(devObj);
+		
+		if (isUpdateOrgInfo)
+			OrgInfoUtils.saveOrUpdateDevices(orgId, devId, ianaId, sn, dev.getNetworkId());
+		
+		return true;
+	}
+	
+	private synchronized static void loadObjectToCache(NetInfoObject infoObj, String orgId, Integer netId) throws Exception {
+				
+		DevicesDAO devDAO = new DevicesDAO();
+		List<Devices> devLst = null;
+		//List<DevicesTrimObject> devTrimLst = new ArrayList<DevicesTrimObject>();
+		Map<Integer, DevicesTrimObject> devTrimMap = new ConcurrentHashMap<Integer, DevicesTrimObject>();
+		DevicesTrimObject devTrim = null;
+		DevicesObject devObj = null;
+		//List<Devices> inactDevLst = null;
+
+		/*
+		 * Add active device list and inactive device list
+		 */
+		if (log.isInfoEnabled())
+			log.infof("NetInfoObject - Loading org %s net %d", orgId, netId);
+		devDAO = new DevicesDAO(orgId);
+		devLst = devDAO.getDevicesList(netId);		
+	
+		if (log.isInfoEnabled())
+			log.infof("NetInfoObject - devList = " + devLst);
+		
+		for (Devices dev:devLst)
+		{
+			devTrim = new DevicesTrimObject(dev.getId(), dev.getIanaId(), dev.getSn(), dev.getNetworkId());
+			//devTrimLst.add(devTrim);
+			devTrimMap.put(devTrim.getId(), devTrim);
+			
+			devObj = new DevicesObject();
+			try {
+				PropertyUtils.copyProperties(devObj, dev);
+				NetUtils.putDevicesObject(devObj);			
+			} catch (Exception e) {
+				log.errorf("Exception %s - Fail to create DevicesObject for orgId %s dev %d %s", e, orgId, dev.getIanaId(), dev.getSn());
+				throw new Exception(e);
+			}
+		}
+		
+		//inactDevLst = devDAO.getInactiveDevicesList(netId);
+		if (log.isInfoEnabled())
+			log.infof("NetInfoObject - Loaded org %s net %d actDevLst.size %d", orgId, netId, devTrimMap.size());
+//		infoObj.getActDevLst().clear();
+//		infoObj.getActDevLst().addAll(devTrimLst);
+		infoObj.getActDevices().putAll(devTrimMap);
+//		infoObj.getInactDevLst().clear();
+//		infoObj.getInactDevLst().addAll(inactDevLst);
+		
+		infoObj.setLoaded(true);
+		
+		putNetInfoObject(infoObj);
+		if (log.isInfoEnabled())
+			log.info("NetInfoObject - updated");		
+	}
+	
+	public static NetInfoObject getNetInfoObject(String orgId, Integer netId)
+	{
+		boolean reload = false;
+		
+		NetInfoObject netO = new NetInfoObject(orgId, netId);
+		try {
+			netO = ACUtil.<NetInfoObject> getPoolObjectBySn(netO, NetInfoObject.class);
+			Long now = DateUtils.getUtcDate().getTime();
+			if (netO!=null && netO.getCreateTime()!=null && (now - netO.getCreateTime() > RELOAD_IN_SEC * 1000L))
+			{
+				log.warnf("NetInfoObject %s %d reach time to reload", orgId, netId);
+				reload = true;
+			}
+			
+			if( reload || netO == null || !netO.isLoaded())
+			{	
+				if (lock.tryLock())
+				{
+					try {
+						if(log.isInfoEnabled())
+							log.infof("NetUtils.locked %d orgId %s netId %d", lockCount.incrementAndGet(), orgId, netId);
+						netO = new NetInfoObject(orgId, netId);					
+						netO = ACUtil.<NetInfoObject> getPoolObjectBySn(netO, NetInfoObject.class);			
+						if( reload || netO == null || !netO.isLoaded())
+						{
+							netO = new NetInfoObject(orgId, netId);
+							loadObjectToCache(netO, orgId, netId);
+						}
+					} catch (Exception e) {
+						log.error("NetUtils orgId "+orgId+" netId "+netId+"- get netinfo object exception", e);
+					} finally {
+						lock.unlock();
+						if(log.isInfoEnabled())
+							log.infof("NetUtils.release %d orgId %s netId %d", lockCount.decrementAndGet(), orgId, netId);
+					}
+				}
+			}	
+		} catch (InstantiationException | IllegalAccessException e) {
+			log.error(e.getMessage(), e);
+			return null;
+		} catch (Exception e) {
+			log.error("Exception ", e);
+			return null;
+		}
+		return netO;
+	}
+	
+	public static void putNetInfoObject(NetInfoObject netInfo)
+	{
+		if (netInfo.getCreateTime()!=null && DateUtils.getUtcDate().getTime() - netInfo.getCreateTime() > 60000
+				&& (netInfo.getDevInfoMap()==null || netInfo.getDevInfoMap().isEmpty()))
+		{
+			/* HOT FIX */
+			log.warnf("ER10001 - The dev map for %s is null in the netInfo. set reload!", netInfo.getKey());
+			netInfo.setLoaded(false);
+		}
+		if(log.isInfoEnabled())
+			log.info("NetInfoObject = "+netInfo);
+		try {
+			ACUtil.<NetInfoObject> cachePoolObjectBySn(netInfo, NetInfoObject.class);
+		} catch (InstantiationException | IllegalAccessException e) {
+			log.error(e.getMessage(), e);
+		}
+	}
+
+	public static void removeNetInfoObject(NetInfoObject netInfo)
+	{
+		try {
+			ACUtil.<NetInfoObject> removePoolObjectBySn(netInfo, NetInfoObject.class);
+		} catch (InstantiationException | IllegalAccessException e) {
+			log.error(e.getMessage(), e);
+		}
+	}
+
+	public static boolean saveDevices(String orgId, Integer netId, Devices dev)
+	{
+		if (orgId == null || netId == null)
+		{
+			log.error("Given orgId/netId is invalid.");
+			return false;
+		}
+
+		if (dev == null || dev.getId() == null)
+		{
+			log.error("Given device info is incomplete.");
+			return false;
+		}
+
+		NetInfoObject netO = getNetInfoObject(orgId, netId);
+		if (netO == null) {
+			log.error("netO does not exist");
+			return false;
+		}
+
+		return doDevices(netO, orgId, dev, OP.SAVE);
+	}
+
+	public static boolean saveOrUpdateDevices(String orgId, Integer netId, Devices dev)
+	{
+		if (orgId == null || netId == null)
+		{
+			log.error("Given orgId/netId is invalid.");
+			return false;
+		}
+
+		if (dev == null || dev.getId() == null)
+		{
+			log.error("Given network info is incomplete.");
+			return false;
+		}
+
+		NetInfoObject netO = getNetInfoObject(orgId, netId);
+		if (netO == null) {
+			log.error("netO does not exist");
+			return false;
+		}
+
+		if (saveOrUpdateDevices(netO, orgId, dev))
+		{
+			if(log.isInfoEnabled())
+				log.infof("dev %d is added/update", dev.getId());
+			return true;
+		}
+		else
+		{
+			log.warnf("dev %d is add/update failure", dev.getId());
+			return false;
+		}
+	}
+
+	public static boolean deleteDevices(String orgId, Integer netId, Devices dev)
+	{
+		if (orgId == null || netId == null)
+		{
+			log.error("Given orgId/netId is invalid.");
+			return false;
+		}
+
+		if (dev == null || dev.getId() == null)
+		{
+			log.error("Given device info is incomplete.");
+			return false;
+		}
+
+		NetInfoObject netO = getNetInfoObject(orgId, netId);
+		if (netO == null) {
+			log.error("Given netId does not exist");
+			return false;
+		}
+
+		if (!deleteDevices(netO, orgId, dev))
+			log.warnf("device %d does not exist", dev.getId());
+
+		return true;
+	}
+
+	private static boolean saveOrUpdateDevices(NetInfoObject netO, String orgId, Devices dev)
+	{
+		return doDevices(netO, orgId, dev, OP.SAVEORUPDATE);
+	}
+
+	private static boolean deleteDevices(NetInfoObject netO, String orgId, Devices dev)
+	{
+		return doDevices(netO, orgId, dev, OP.DELETE);
+	}
+
+	private static boolean doDevices(NetInfoObject netO, String orgId, Devices dev, OP op)
+	{
+		if(log.isDebugEnabled())
+			log.debugf("NetUtils doDevices op %s %s %s %s", op, netO, orgId, dev);
+
+		boolean isRequireUpdate = false;
+		boolean result = false;
+		int index = 0;
+		Integer old_netId = -1;
+//		String old_orgId = null;
+		DevicesTrimObject devTrim = null;
+
+		
+		Map<Integer, DevicesTrimObject> devTrimMap = netO.getDevInfoMap();
+		//List<DevicesTrimObject> devTrimLst = netO.getDevInfoLst();
+		//CopyOnWriteArrayList<Devices> devInactiveLst = netO.getInactDevInfoLst();
+		
+		if (dev!=null && dev.getId()!=null)
+		{
+			Integer lookupNetId = OrgInfoUtils.lookupDevicesNetIdByDevId(orgId, dev.getId());
+			if (lookupNetId!=null)
+				old_netId = lookupNetId;
+			else
+				if (log.isDebugEnabled())
+					log.warnf("MD10001 - DEBUG WARN lookupNetId failure %d", lookupNetId);
+		}
+		
+		devTrim = new DevicesTrimObject(dev.getId(), dev.getIanaId(), dev.getSn(), dev.getNetworkId());	
+		switch (op)
+		{
+		case SAVE: // for safety
+		case SAVEORUPDATE:
+			if(log.isDebugEnabled())
+				log.debugf("NetUtils - SAVEUPDATE devTrimMap.size=%d", devTrimMap.size());
+			
+			isRequireUpdate = true;
+			
+			if (dev.isActive())
+			{
+				devTrimMap.put(devTrim.getId(), devTrim);
+								
+				/* update devices object */
+				DevicesObject devObj = NetUtils.createDevicesObjectFromDev(dev);
+				if (devObj==null)
+				{
+					log.errorf("Fail to update createDevicesObjectFromDev for dev %d %s", dev.getIanaId(), dev.getSn());
+					return false;
+				}
+				
+				NetUtils.putDevicesObject(devObj);
+			}
+			result = true;
+			log.infof("save or update %s %d", orgId, dev.getId());
+			break;
+		case DELETE:
+			log.debugf("NetUtils - DELETE devTrimMap.size=%d", devTrimMap.size());
+			
+			isRequireUpdate = true;
+			
+			if (devTrimMap.remove(devTrim.getId())==null)
+			{
+				log.debugf("DELETE - devTrim %s is not found!", devTrim);
+			}
+			else
+			{
+				log.debugf("DELETE - devTrim %s is removed!", devTrim);
+			}
+						
+			//dev.setActive(false);		
+			
+//			index = devInactiveLst.indexOf(dev);
+//			if (index==-1)
+//				devInactiveLst.add(dev);
+//			else
+//				devInactiveLst.set(index, dev);
+			
+			/* remove devices object */
+			if (!NetUtils.removeDevicesObjectBySn(dev.getIanaId(), dev.getSn()))
+			{
+				log.warnf("Fail to remove DevicesObject for dev %d %s", dev.getIanaId(), dev.getSn());					
+			}
+			
+			try {
+				OrgInfoUtils.deleteDevices(orgId, dev.getId(), dev.getIanaId(), dev.getSn());
+			} catch (Exception e) {
+				log.error("OrgInfoUtils.deleteDevices Exception", e);
+			}
+			
+			result = true;			
+			log.infof("delete %s %d", orgId, dev.getId());
+			break;
+		default:
+			log.error("unknown operation!");
+			break;
+		}
+
+		//netO.setDevInfoLst(devLst);
+		if (isRequireUpdate)
+			putNetInfoObject(netO);
+
+		return result;
+	}
+
+	
+	public static DevicesObject getDevicesObjectUnsafe(Integer ianaId, String sn)
+	{
+		return getDevicesObject(ianaId, sn);
+	}
+	
+	private static DevicesObject getDevicesObject(Integer ianaId, String sn)
+	{
+		/* seek cache, else seek device */
+		DevicesObject devObjExample = new DevicesObject(sn, ianaId);
+
+		try {
+			return ACUtil.<DevicesObject> getPoolObjectBySn(devObjExample, DevicesObject.class);
+		} catch (Exception e) {
+			log.error("getDevicesObject getPoolObjectBySn exception "+e, e);
+			return null;
+		}
+	}
+	
+	public static DevicesObject createDevicesObjectFromDev(Devices dev)
+	{
+		/* seek cache, else seek device */
+		DevicesObject devObj = new DevicesObject();
+		try {
+			PropertyUtils.copyProperties(devObj, dev);
+		} catch (Exception e) {
+			log.errorf("Exception createDevicesObjectFromDev - Fail for dev %d %s", dev.getIanaId(), dev.getSn());
+			return null;
+		}		
+		return devObj;
+	}
+	
+	private static boolean removeDevicesObjectBySn(Integer ianaId, String sn)
+	{
+		DevicesObject devObj = NetUtils.getDevicesObject(ianaId, sn);
+		if (devObj!=null)
+		{
+			try {
+				ACUtil.<DevicesObject>removePoolObjectBySn(devObj, DevicesObject.class);
+			} catch (Exception e) {
+				log.errorf("Fail to remove DevicesObject for dev %d %s", ianaId, sn);
+				return false;
+			}
+		}
+		
+		return true;
+	}
+	
+	//public static List<Devices> getConvertedDevicesObjectMapFromCache(String orgId, List<DevicesTrimObject> devTrimLst)
+	public static List<Devices> getConvertedDevicesObjectMapFromCache(String orgId, Map<Integer, DevicesTrimObject> devTrimMap)
+	{
+		List<Devices> devFullLst = new ArrayList<Devices>();
+		
+		List<DevicesTrimObject> devTrimLst = new ArrayList<DevicesTrimObject>();
+		DevicesObject devObj = null;
+		Devices dev = null;
+		
+		try {
+			if (devTrimMap!=null && devTrimMap.values()!=null && devTrimMap.values().size()!=0)
+			{		
+				devTrimLst.addAll(devTrimMap.values());
+				for (DevicesTrimObject devTrim:devTrimLst)
+				{
+					if (devTrim!=null)
+					{
+						devObj = NetUtils.getDevicesObject(devTrim.getIanaId(), devTrim.getSn());
+						if (devObj!=null)
+						{
+							dev = new Devices();
+							PropertyUtils.copyProperties(dev, devObj);
+							if (dev!=null)
+								devFullLst.add(dev);
+						}
+					}
+				}
+			}
+		} catch (Exception e)
+		{
+			log.error("Exception on finding all DevicesObject list, load single sql from db ",e);
+			try {
+				DevicesDAO devDAO = new DevicesDAO(orgId);
+				devFullLst = devDAO.getAllDevices();
+			} catch (Exception e1) {
+				log.error("Exception on load from db", e1);
+			}
+		}
+		
+		return devFullLst;
+	}
+	
+	public static boolean putDevicesObject(DevicesObject devO)
+	{
+		if (log.isDebugEnabled()) log.debugf("putDevicesObject devO=%s", devO);
+		try {
+			ACUtil.<DevicesObject> cachePoolObjectBySn(devO, DevicesObject.class);
+			return true;
+		} catch (Exception e) {
+			log.errorf("putDevicesObject exception %s", e.getMessage());
+			return false;
+		}
+	}
+}

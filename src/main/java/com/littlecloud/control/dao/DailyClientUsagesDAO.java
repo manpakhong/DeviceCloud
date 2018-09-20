@@ -1,0 +1,1094 @@
+package com.littlecloud.control.dao;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.jdbc.BaseDAO;
+import com.littlecloud.control.entity.report.ClientUsages;
+import com.littlecloud.control.entity.report.DailyClientUsages;
+import com.littlecloud.control.entity.report.DailyClientUsagesId;
+import com.littlecloud.pool.model.DailyClientUsageResult;
+import com.littlecloud.pool.utils.Utils;
+import com.littlecloud.utils.CalendarUtils;
+import com.peplink.api.db.DBConnection;
+import com.peplink.api.db.DBQuery;
+import com.peplink.api.db.util.DBUtil;
+
+public class DailyClientUsagesDAO extends BaseDAO<DailyClientUsages, Integer>{
+	private static final Logger log = Logger.getLogger(DailyClientUsagesDAO.class);
+	
+	public DailyClientUsagesDAO() throws SQLException{
+		super(DailyClientUsages.class);
+	}
+	
+	public DailyClientUsagesDAO(String orgId) throws SQLException{
+		super(DailyClientUsages.class, orgId);
+	}
+	
+	public DailyClientUsagesDAO(String orgId, boolean readonly) throws SQLException{
+		super(DailyClientUsages.class, orgId, readonly);
+	}
+	
+	public boolean saveClientDailyUsagesList(List<DailyClientUsages> clientDailyUsageList) throws SQLException{
+		boolean isSave = false;
+		try{
+			DBUtil dbUtil = DBUtil.getInstance();
+			dbUtil.startSession();
+			DBConnection batchConnection = dbUtil.getConnection(false, orgId, false);
+			if (clientDailyUsageList != null && clientDailyUsageList.size() > 0){
+				for (DailyClientUsages clientDailyUsage: clientDailyUsageList){
+					batchConnection.addBatch(clientDailyUsage);
+				}
+			}
+			batchConnection.commit();
+			batchConnection.close();
+			if(dbUtil.isSessionStarted()){
+				dbUtil.endSession();
+			}
+			isSave = true;
+		}
+		catch(Exception e){
+			log.error("DailyClientUsagesDAO.saveClientDailyUsagesList() - Exception: ", e);
+		}
+		finally{
+			if(dbUtil.isSessionStarted()) {
+				dbUtil.endSession();
+			}
+		}
+		return isSave;
+	}
+	
+	public List<DailyClientUsages> findByMacIpNetIdDevIdAndCalendarRange(
+			String mac, String ip, Integer deviceId, Integer networkId, Calendar calFrom, Calendar calTo) throws SQLException {
+		List<DailyClientUsages> results = new ArrayList<DailyClientUsages>();
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try{
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			
+			StringBuilder sbSql = new StringBuilder();
+			sbSql.append("select ");
+			sbSql.append("id, ");
+			sbSql.append("network_id, ");
+			sbSql.append("device_id, ");
+			sbSql.append("mac, ");
+			sbSql.append("ip, ");
+			sbSql.append("name, ");
+			sbSql.append("manufacturer, ");
+			sbSql.append("tx, ");
+			sbSql.append("rx, ");
+			sbSql.append("type, ");
+			sbSql.append("datetime, ");
+			sbSql.append("unixtime ");
+			sbSql.append("from ");
+			sbSql.append(dbname + ".daily_client_usages ");
+			sbSql.append("where ");
+			sbSql.append("datetime ");
+			sbSql.append("between ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calFrom) + "' ");
+			sbSql.append("and ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calTo) + "' ");
+			sbSql.append("and ");
+			sbSql.append("network_id = " + networkId + " ");
+			sbSql.append("and ");
+			sbSql.append("device_id = " + deviceId + " ");
+			sbSql.append("and ");
+			sbSql.append("mac = '" + mac + "' ");
+			sbSql.append("and ");
+			sbSql.append("ip = '" + ip + "' ");
+
+			if (log.isInfoEnabled()){
+				log.infof("DailyClientUsagesDAO.findByMacIpNetIdDevIdAndCalendarRange - sql: %s" + sbSql.toString());
+			}
+			rs = query.executeQuery(sbSql.toString());
+			while (rs.next()){
+				DailyClientUsages usageObj = new DailyClientUsages();
+				Long id = rs.getLong("id");
+				Integer unixtime = rs.getInt("unixtime");
+				
+				DailyClientUsagesId dcId = new DailyClientUsagesId();
+				dcId.setId(id);
+				dcId.setUnixtime(unixtime);
+				
+				usageObj.setId(dcId);
+				usageObj.setNetworkId(rs.getInt("network_id"));
+				usageObj.setDeviceId(rs.getInt("device_id"));
+				usageObj.setMac(rs.getString("mac"));
+				usageObj.setIp(rs.getString("ip"));
+				usageObj.setName(rs.getString("name"));
+				usageObj.setManufacturer(rs.getString("manufacturer"));
+				usageObj.setTx(rs.getFloat("tx"));
+				usageObj.setRx(rs.getFloat("rx"));
+				usageObj.setType(rs.getString("type"));
+				usageObj.setDatetime((Date) rs.getObject("datetime"));
+				usageObj.setUnixtime(unixtime);
+				
+				results.add(usageObj);
+			}
+		} catch (Exception e){
+			log.error("DailyClientUsagesDAO.findByMacIpNetIdDevIdAndCalendarRange() - Exception:", e);
+		} finally {
+			if(rs != null){
+				rs.close();
+				rs = null;				
+			}
+			if( session != null ){
+				session.close();
+				session = null;
+			}
+		}
+		return results;
+	}
+	
+	public DailyClientUsages findByMacIpNetIdDevIdAndUnixTime(String mac, String ip, int unixtime, int devId,int netId) throws SQLException
+	{
+		log.debug("getting " + this.getClass().getSimpleName() + " instance with ip : " + ip + " and time: "+ unixtime );
+		DBConnection session = getSession();
+		try {
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DailyClientUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, netId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("unixtime", com.peplink.api.db.query.Criteria.EQ, unixtime);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, devId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("mac", com.peplink.api.db.query.Criteria.EQ, mac);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("ip", com.peplink.api.db.query.Criteria.EQ, ip);
+			return (DailyClientUsages)query.executeQueryAsSingleObject();
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if (session!=null) session.close();
+		}
+	}
+	
+	
+	public List<DailyClientUsages> getRecordsByDeviceIdAndIpAndTime(Integer netId, Integer devId, String ip ,String datetime ) throws SQLException
+	{
+		List<DailyClientUsages> result = null;
+		DBConnection session = getSession();
+		
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DailyClientUsages.class);
+			query.addCriteria("network_id", com.peplink.api.db.query.Criteria.EQ, netId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("device_id", com.peplink.api.db.query.Criteria.EQ, devId);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("ip", com.peplink.api.db.query.Criteria.EQ, ip);
+			query.addCondition(com.peplink.api.db.query.Condition.AND);
+			query.addCriteria("datetime", com.peplink.api.db.query.Criteria.LIKE, datetime+"%");
+			query.addOrderBy("unixtime desc");
+//			log.info("The client HIST record : " + query.getQuery());
+			result = (List<DailyClientUsages>)query.executeQueryAsObject();
+		}
+		catch( Exception e )
+		{
+			throw e;
+		}
+		finally
+		{
+			if( session != null )
+				session.close();
+		}
+		
+		return result;
+	}
+	
+	public List<DailyClientUsageResult> getTopClientTotalUsage(Integer networkId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting summerize client usage List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		ResultSet rs2 = null;
+		
+		try {
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String withIndexHints = "";
+
+			DBQuery query2 = session.createQuery();
+			rs2 = query2.executeQuery("SHOW KEYS FROM "+dbname+".daily_client_usages WHERE Key_name='mac';");
+			if(rs2.next()) { 
+				withIndexHints = "use index (mac)";
+				log.info("OrgId = " + session.getOrgId() + ", networkId=" + networkId + ", " + withIndexHints);
+			}
+			
+			DBQuery query = session.createQuery();
+			String sql = "";
+			if (!bWifiOnly){
+				sql = "SELECT mac, name, manufacturer, sum(tx), sum(rx), ip FROM "+dbname+".daily_client_usages " + withIndexHints + " where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by mac order by (sum(tx)+sum(rx)) desc;";
+				rs = query.executeQuery(sql);
+			}else {
+				sql = "SELECT mac, name, manufacturer, sum(tx), sum(rx), ip FROM "+dbname+".daily_client_usages " + withIndexHints + " where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by mac order by (sum(tx)+sum(rx)) desc;";
+				rs = query.executeQuery(sql);
+			}
+			String col;
+			DailyClientUsageResult result = null;
+			List<DailyClientUsageResult> resultList = new ArrayList<DailyClientUsageResult>();
+			while (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();
+				col = rs.getString(i++);
+				result.setMac(col);
+				col = rs.getString(i++);
+				result.setName(col);
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));
+				else 
+					result.setTx(0d);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setRx(Double.valueOf(col));
+				else 
+					result.setRx(0d);
+				col = rs.getString(i++);
+				result.setIp(col);
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if(rs2 != null)
+			{
+				rs2.close();
+				rs2 = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	public List<DailyClientUsageResult> getTopClientTotalUsageWithDevId(Integer networkId, Integer device_id, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting summerize client usage List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		
+		try {
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+
+			DBQuery query = session.createQuery();
+			if (!bWifiOnly){
+				rs = query.executeQuery("SELECT mac, name, manufacturer, sum(tx), sum(rx), ip FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+device_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by mac order by (sum(tx)+sum(rx)) desc;");
+			}else {
+				rs = query.executeQuery("SELECT mac, name, manufacturer, sum(tx), sum(rx), ip FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+device_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by mac order by (sum(tx)+sum(rx)) desc;");
+			}
+			log.info("Sql for getting top client : " + query.getQuery());
+			String col;
+			DailyClientUsageResult result = null;
+			List<DailyClientUsageResult> resultList = new ArrayList<DailyClientUsageResult>();
+			while (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();
+				col = rs.getString(i++);
+				result.setMac(col);
+				col = rs.getString(i++);
+				result.setName(col);
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));
+				else 
+					result.setTx(0d);
+				col = rs.getString(i++);
+				if(col != null)
+					result.setRx(Double.valueOf(col));
+				else
+					result.setRx(0d);
+				col = rs.getString(i++);
+				result.setIp(col);
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	public DailyClientUsageResult getTotalManufacturerUsage(Integer networkId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting Total manufacturer usage List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		
+		try {
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			DBQuery query = session.createQuery();
+			
+			if (!bWifiOnly) {
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx), count(distinct mac) FROM "+dbname+".daily_client_usages where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" order by count(distinct mac) desc;");
+			} else {
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx), count(distinct mac) FROM "+dbname+".daily_client_usages where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' order by count(distinct mac) desc;");
+			}
+			
+			String col;
+			DailyClientUsageResult result = null;
+			if (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));		
+				else 
+					result.setTx(0d);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setClient_cnt(Long.valueOf(col));
+				else 
+					result.setClient_cnt(0l);
+			}
+			
+			return result;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	public DailyClientUsageResult getTotalManufacturerUsageWithDevId(Integer networkId, Integer device_id, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting Total manufacturer usage List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and deviecId: "+device_id+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try {
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			if (!bWifiOnly){
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx), count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+device_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" order by count(distinct mac) desc");
+			}else{
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx), count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+device_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' order by count(distinct mac) desc;");
+			}
+			
+			String col;
+			DailyClientUsageResult result = null;
+			if (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));		
+				else 
+					result.setTx(0d);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setClient_cnt(Long.valueOf(col));
+				else 
+					result.setClient_cnt(0l);
+			}
+			
+			return result;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+
+	public Long getNetworkTotalClientCount(Integer networkId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting network total client count  " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try {
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			if (!bWifiOnly){
+				rs = query.executeQuery("SELECT count(distinct mac) FROM "+dbname+".daily_client_usages where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" ;");
+			}else {
+				rs = query.executeQuery("SELECT count(distinct mac) FROM "+dbname+".daily_client_usages where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' ;");
+			}
+			String col;
+			if (rs.next())
+			{
+				int i=1;
+				col = rs.getString(i++);
+				if (col != null)
+					 return Long.valueOf(col);
+				else 
+					return 0l;
+			}
+			return 0l;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}		
+		}
+	}
+	
+	public Long getNetworkTotalClientCountWithDevId(Integer networkId, Integer deviceId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting network total client count  " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and deviecId: "+deviceId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try {
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			if (!bWifiOnly){
+				rs = query.executeQuery("SELECT count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+deviceId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" ;");
+			}else {
+				rs = query.executeQuery("SELECT count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+deviceId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' ;");
+			}
+			String col;
+			if (rs.next())
+			{
+				int i=1;
+				col = rs.getString(i++);
+				if (col != null)
+					 return Long.valueOf(col);
+				else 
+					return 0l;
+			}
+			return 0l;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}	
+		}
+	}	
+	
+	
+	public List<DailyClientUsageResult> getTopManufacturerClient(Integer networkId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting Total manufacturer by usage List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		ResultSet rs2 = null;
+		
+		try {
+			String withIndexHints = "";
+			DBQuery query2 = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+
+			rs2 = query2.executeQuery("SHOW KEYS FROM "+dbname+".daily_client_usages WHERE Key_name='manufacturer';");
+			if(rs2.next()) {
+				withIndexHints = "use index (manufacturer)";
+				log.info("OrgId = " + session.getOrgId() + ", networkId=" + networkId + ", " + withIndexHints);
+			}
+			
+			DBQuery query = session.createQuery();
+			if (!bWifiOnly){
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages " + withIndexHints + "where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by manufacturer order by count(distinct mac) desc limit 100;");
+			}else {
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages " + withIndexHints + "where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by manufacturer order by count(distinct mac) desc limit 100;");
+			}
+			String col;
+			DailyClientUsageResult result = null;
+			List<DailyClientUsageResult> resultList = new ArrayList<DailyClientUsageResult>();
+			while (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();			
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));		
+				else 
+					result.setTx(0d);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setClient_cnt(Long.valueOf(col));
+				else 
+					result.setClient_cnt(0l);
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if(rs2 != null)
+			{
+				rs2.close();
+				rs2 = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	public List<DailyClientUsageResult> getTopManufacturerClientWithDevId(Integer networkId, Integer deviceId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting Total manufacturer by usage List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try {
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			if (!bWifiOnly){
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+deviceId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by manufacturer order by count(distinct mac) desc limit 100;");
+			}else {
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+deviceId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by manufacturer order by count(distinct mac) desc limit 100;");
+			}
+			String col;
+			DailyClientUsageResult result = null;
+			List<DailyClientUsageResult> resultList = new ArrayList<DailyClientUsageResult>();
+			while (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();			
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));		
+				else 
+					result.setTx(0d);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setClient_cnt(Long.valueOf(col));
+				else 
+					result.setClient_cnt(0l);
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	public List<DailyClientUsageResult> getTopManufacturerUsage(Integer networkId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting Total manufacturer by client List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		ResultSet rs2 = null;
+		
+		try {
+			String withIndexHints = "";
+			
+			DBQuery query2 = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+
+			rs2 = query2.executeQuery("SHOW KEYS FROM "+dbname+".daily_client_usages WHERE Key_name='manufacturer';");
+			if(rs2.next()) { 
+				withIndexHints = "use index (manufacturer)";
+				log.info("OrgId = " + session.getOrgId() + ", networkId=" + networkId + ", " + withIndexHints);
+			}
+						
+			DBQuery query = session.createQuery();
+			if (!bWifiOnly) {
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages " + withIndexHints + "where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by manufacturer order by sum(tx)+sum(rx) desc limit 100;");
+			}else {
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages " + withIndexHints + "where network_id ="+networkId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by manufacturer order by sum(tx)+sum(rx) desc limit 100;");
+			}
+			
+			String col;
+			DailyClientUsageResult result = null;
+			List<DailyClientUsageResult> resultList = new ArrayList<DailyClientUsageResult>();
+			while (rs.next()){
+				int i=1;
+				
+				result = new DailyClientUsageResult();			
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));	// tx is actually tx + rx		
+				else 
+					result.setTx(0d);
+				
+				col = rs.getString(i++);
+				if (col != null)
+					result.setClient_cnt(Long.valueOf(col));
+				else 
+					result.setClient_cnt(0l);
+				
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if(rs2 != null)
+			{
+				rs2.close();
+				rs2 = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+	
+	public List<DailyClientUsageResult> getTopManufacturerUsageWithDevId(Integer networkId, Integer deviceId, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException{
+		log.debug("getting Total manufacturer by client List " + this.getClass().getSimpleName()+" with networkId: "+networkId+" and start time: "+ startTime +" and end time: "+endTime);
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try {
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			if (!bWifiOnly){
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+deviceId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by manufacturer order by sum(tx)+sum(rx) desc limit 100;");
+			}else {
+				rs = query.executeQuery("SELECT manufacturer, sum(tx)+sum(rx) , count(distinct mac) FROM "+dbname+".daily_client_usages where network_id = "+networkId+" and device_id = "+deviceId+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by manufacturer order by sum(tx)+sum(rx) desc limit 100;");
+			}
+			String col;
+			DailyClientUsageResult result = null;
+			List<DailyClientUsageResult> resultList = new ArrayList<DailyClientUsageResult>();
+			while (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();			
+				col = rs.getString(i++);
+				result.setManufacturer(col);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setTx(Double.valueOf(col));		
+				else 
+					result.setTx(0d);
+				col = rs.getString(i++);
+				if (col != null)
+					result.setClient_cnt(Long.valueOf(col));
+				else 
+					result.setClient_cnt(0l);
+				resultList.add(result);
+			}
+			if (resultList.isEmpty()){
+				return null;
+			}
+			return resultList;
+		} catch (SQLException e)
+		{
+			throw e;
+		} finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	}
+
+	public List<String> getDistinctIpsByDeviceIdAndStarttime(Integer netId,Integer devId,String datetime) throws SQLException
+	{
+		List<String> result = null;
+		DBConnection session = getSession();
+		ResultSet rs = null;
+	
+		try
+		{
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "select * from "+dbname+".daily_client_usages where datetime like '"+datetime+"%' and device_id = "+devId+" and network_id="+netId+" group by ip;";
+			log.info("HIST SQL : " + sql);
+			rs = query.executeQuery(sql);
+			result = new ArrayList<String>();
+		
+			while (rs.next())
+			{
+				String ip = rs.getString("ip"); 
+				result.add(ip);
+			}
+		}
+		catch( Exception e )
+		{
+			throw e;
+		}
+		finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+	
+		return result;
+	}
+	
+	public List<DailyClientUsages> getClientMonthlyUsagesRecords(Calendar calFrom, Calendar calTo) throws SQLException{
+		List<DailyClientUsages> result = null;
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		SimpleDateFormat format = new SimpleDateFormat("yyyy-MM");
+		try
+		{
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			StringBuilder sbSql = new StringBuilder();
+			sbSql.append("select ");
+			sbSql.append("network_id, ");
+			sbSql.append("device_id, ");
+			sbSql.append("mac, ");
+			sbSql.append("ip, ");
+			sbSql.append("sum(tx) as tx, ");
+			sbSql.append("sum(rx) as rx, ");
+			sbSql.append("type, ");
+			sbSql.append("date_format(datetime, '%Y-%m') as datetime ");
+			sbSql.append("from ");
+			sbSql.append(dbname + ".daily_client_usages ");
+			sbSql.append("where ");
+			sbSql.append("datetime ");
+			sbSql.append("between ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calFrom) + "' ");
+			sbSql.append("and ");
+			sbSql.append("'" + CalendarUtils.convertCalendar2MySqlDateString(calTo) + "' ");
+			sbSql.append("group by ");
+			sbSql.append("network_id, ");
+			sbSql.append("device_id, ");
+			sbSql.append("mac, ");
+			sbSql.append("ip ");
+			if (log.isInfoEnabled()){
+				log.infof("DailyClientUsagesDAO.getClientMonthlyUsagesRecords() - sql: %s" + sbSql.toString());
+			}
+			rs = query.executeQuery(sbSql.toString());
+			result = new ArrayList<DailyClientUsages>();			
+			while (rs.next()) {
+				DailyClientUsages daily_usage = new DailyClientUsages();
+				daily_usage.setNetworkId(rs.getInt("network_id"));
+				daily_usage.setDeviceId(rs.getInt("device_id"));
+				daily_usage.setMac(rs.getString("mac"));
+				daily_usage.setIp(rs.getString("ip"));
+				daily_usage.setTx(rs.getFloat("tx"));
+				daily_usage.setRx(rs.getFloat("rx"));
+				daily_usage.setType(rs.getString("type"));
+				daily_usage.setDatetime(format.parse(rs.getString("datetime")));
+				result.add(daily_usage);
+			}
+		}
+		catch( Exception e ){
+			log.error("Get daily client records failed",e);
+		}
+		finally{
+			if(rs != null){
+				rs.close();
+				rs = null;				
+			}
+			if( session != null ){
+				session.close();
+				session = null;
+			}
+		}
+		return result;
+	}
+	
+	
+	public List<DailyClientUsages> getMonthlyRecords(String start, String end) throws SQLException
+	{
+		List<DailyClientUsages> result = null;
+		
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		SimpleDateFormat format = new SimpleDateFormat("yyyy-MM");
+		
+		try
+		{
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "select network_id, device_id, mac, ip, sum(tx) as tx, sum(rx) as rx, type, date_format(datetime,'%Y-%m') as datetime from " +
+					 dbname + ".daily_client_usages where datetime >= '"+start+"' and datetime < '"+end+"' group by network_id, device_id, mac, ip;";
+			log.info("get monthly client usages sql : " + sql);
+			rs = query.executeQuery(sql);
+			result = new ArrayList<DailyClientUsages>();
+			DailyClientUsages daily_usage = null;
+			
+			while (rs.next())
+			{
+				daily_usage = new DailyClientUsages();
+				daily_usage.setNetworkId(rs.getInt("network_id"));
+				daily_usage.setDeviceId(rs.getInt("device_id"));
+				daily_usage.setMac(rs.getString("mac"));
+				daily_usage.setIp(rs.getString("ip"));
+				daily_usage.setTx(rs.getFloat("tx"));
+				daily_usage.setRx(rs.getFloat("rx"));
+				daily_usage.setType(rs.getString("type"));
+				daily_usage.setDatetime(format.parse(rs.getString("datetime")));
+				result.add(daily_usage);
+			}
+		}
+		catch( Exception e )
+		{
+			log.error("Get daily client records failed",e);
+		}
+		finally
+		{
+			if(rs != null)
+			{
+				rs.close();
+				rs = null;				
+			}
+			if( session != null )
+			{
+				session.close();
+				session = null;
+			}
+		}
+		
+		return result;
+	}
+	
+
+	public List<DailyClientUsageResult> getDailyClientCount(Integer network_id, Integer device_id, Integer startTime, Integer endTime, boolean bWifiOnly) throws SQLException
+	{
+		List<DailyClientUsageResult> resultLst = null;
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		try
+		{
+			DBQuery query = session.createQuery();
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "";
+			if (device_id!=null && device_id != 0) {
+				if(!bWifiOnly){
+					sql = "SELECT unixtime, count(distinct(mac)) FROM "+dbname+".daily_client_usages where network_id = "+network_id+" and device_id = "+device_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by unixtime order by unixtime asc";
+					rs = query.executeQuery(sql);
+				}
+				else{
+					sql ="SELECT unixtime, count(distinct(mac)) FROM "+dbname+".daily_client_usages where network_id = "+network_id+" and device_id = "+device_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by unixtime order by unixtime asc";
+					rs = query.executeQuery();
+				}
+			} else {
+				if(!bWifiOnly){
+					sql = "SELECT unixtime, count(distinct(mac)) FROM "+dbname+".daily_client_usages where network_id = "+network_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" group by unixtime order by unixtime asc";
+					rs = query.executeQuery(sql);
+				}
+				else{
+					sql = "SELECT unixtime, count(distinct(mac)) FROM "+dbname+".daily_client_usages where network_id = "+network_id+" and unixtime>= "+startTime+" and unixtime<="+endTime+" and type=\'wireless\' group by unixtime order by unixtime asc";
+					rs = query.executeQuery(sql);
+				}
+			}
+			resultLst = new ArrayList<DailyClientUsageResult>();
+			DailyClientUsageResult result = null;
+			String col;
+			while (rs.next()){
+				int i=1;
+				result = new DailyClientUsageResult();
+				col = rs.getString(i++);
+				result.setUnixtime(Integer.valueOf(col));
+				col = rs.getString(i++);
+				result.setClient_cnt(Long.valueOf(col));
+				resultLst.add(result);
+			}
+			if (resultLst.isEmpty()){
+				return null;
+			}
+		}
+		catch(Exception e)
+		{
+			log.error("DailyClientUsagesDAO.getDailyClientCount() - Exception:",e);
+		}
+		finally
+		{
+			if(rs!= null)
+				rs.close();
+			if(session != null)
+				session.close();
+		}
+		return resultLst;
+	}
+	
+
+	public DailyClientUsages getLatestUnixtime(Integer unixtime, Integer network_id) throws SQLException
+	{
+		DailyClientUsages result = null;
+		DBConnection session = getSession();
+		
+		try
+		{
+			DBQuery query = session.createQuery();
+			query.setQueryClass(DailyClientUsages.class);
+			String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+			String sql = "select * from " + dbname + ".daily_client_usages where network_id = "+network_id+" and unixtime >= " + unixtime +" limit 1";
+			log.info(sql);
+			result = (DailyClientUsages)query.executeQueryAsSingleObject(sql);
+		}
+		catch(Exception e)
+		{
+			log.error("get last unixtime error -"+e,e);
+		}
+		finally
+		{
+			if(session != null)
+				session.close();
+		}
+		
+		return result;
+	}
+	
+	public List<DailyClientUsageResult> getDevicesTotalClientCountByNetwork(Integer networkId, Integer startTime,
+			Integer endTime, boolean bWifiOnly) throws Exception {
+		log.debug("getting network total client count  " + this.getClass().getSimpleName() + " with networkId: "
+				+ networkId + " and start time: " + startTime + " and end time: " + endTime);
+		List<DailyClientUsageResult> resultLst = null;
+		DBConnection session = getSession();
+		ResultSet rs = null;
+		String dbname = Utils.PARAM_ORGANIZATION_DB_PREFIX + session.getOrgId();
+		try {
+			DBQuery query = session.createQuery();
+			String sql;
+
+			/* The above sql only returns device with >0 count, but we need devices even with 0 count */
+			if(!bWifiOnly) { 
+				sql = "SELECT du.network_id,du.device_id,count(distinct mac) as count FROM " + dbname
+					+ ".daily_client_usages su right outer join " + dbname + ".daily_device_usages du on su.device_id = du.device_id and su.unixtime = du.unixtime and su.network_id = du.network_id where du.wan_id = 0 and du.network_id = " + networkId
+					+ " and du.unixtime >= " + startTime + " and du.unixtime <= " + endTime	+ " group by du.device_id order by count desc limit 100;";
+			} else {  
+				sql = "SELECT du.network_id,du.device_id,count(distinct mac) as count FROM " + dbname
+					+ ".daily_client_usages su right outer join " + dbname + ".daily_device_usages du on su.device_id = du.device_id and su.unixtime = du.unixtime and su.network_id = du.network_id where du.wan_id = 0 and du.network_id = " + networkId
+					+ " and du.unixtime >= " + startTime + " and du.unixtime <= " + endTime + " and type=\'wireless\' group by du.device_id order by count desc limit 100;";
+			}
+				
+			rs = query.executeQuery(sql);
+			if (rs != null) {
+				resultLst = new ArrayList<DailyClientUsageResult>();
+				DailyClientUsageResult clientUsage = null;
+				while (rs.next()) {
+					clientUsage = new DailyClientUsageResult();
+					clientUsage.setNetwork_id(rs.getInt("network_id"));
+					clientUsage.setDevice_id(rs.getInt("device_id"));
+					clientUsage.setClient_cnt(rs.getLong("count"));
+					resultLst.add(clientUsage);
+				}
+			}
+		} catch (SQLException e) {
+			log.error("Get device total client error -", e);
+		} finally {
+			if (rs != null) {
+				rs.close();
+				rs = null;
+			}
+			if (session != null) {
+				session.close();
+				session = null;
+			}
+		}
+		return resultLst;
+	}
+}

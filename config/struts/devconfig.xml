@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE struts PUBLIC
+        "-//Apache Software Foundation//DTD Struts Configuration 2.0//EN"
+        "http://struts.apache.org/dtds/struts-2.0.dtd">
+
+<struts>
+    <package name="devconfig" namespace="/devconfig" extends="default">
+		<action name="startConfigUpdate" class="com.littlecloud.pool.ConfigAction" method="startConfigUpdate">
+            <result>/blank.jsp</result>
+        </action>      
+		<action name="getDeviceConfigurationFile" class="com.littlecloud.pool.ConfigAction" method="getDeviceConfigurationFile">
+            <result>/blank.jsp</result>
+        </action>
+        <action name="doDeviceChangeSchedule" class="com.littlecloud.pool.DeviceChangeServiceAction" method="doDeviceChangeSchedule">
+            <result>/blank.jsp</result>
+        </action>  
+    </package>
+</struts>

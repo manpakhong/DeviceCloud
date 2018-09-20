@@ -1,0 +1,228 @@
+package com.littlecloud.control.json.model.config.util;
+
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Properties;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.json.model.config.JsonConf.CONFIG_TYPE;
+import com.littlecloud.control.json.model.config.JsonConf_System;
+import com.littlecloud.control.json.model.config.util.exception.SystemConfigException;
+import com.littlecloud.control.json.util.DateUtils;
+
+public class SystemConfigUtils {
+
+	private static final Logger log = Logger.getLogger(SystemConfigUtils.class);
+
+	public static JsonConf_System getDatabaseSystemFullConfig(SystemConfigInfo ctr) throws SystemConfigException {
+
+		String timezone = null;
+		String devname = null;		
+		StringBuilder sb = ctr.getSb();
+		JsonConf_System sysJson = new JsonConf_System();
+		
+		devname = formatDeviceName(ctr); 				
+		sysJson.setDevice_name(devname);
+		sb.append("\n* - name: "+ctr.getDevice_name());
+
+		if (ctr.isFollowNetworkTimezone) {			
+			timezone = DateUtils.getTimezoneFromId(ctr.getTzId());
+			if (timezone != null)
+			{
+				sysJson.setTime_zone(timezone);
+			}
+			sb.append("\n* - follow network timezone: "+timezone+" ("+ctr.getTzId()+")");
+		}
+		else
+		{
+			sb.append("\n* - follow network timezone: no");
+		}
+
+		return sysJson;
+	}
+	
+	public static String getHardwareSystemConfigMd5(Properties fullconfig) 
+	{
+		Properties hwsysconf = getHardwareSystemConfig(fullconfig);				
+		return CommonConfigUtils.getConfChecksumFromHwConf(hwsysconf);	
+	}
+	
+	private static Properties getHardwareSystemConfig(Properties fullconfig) {
+		Properties hwconf = new Properties();
+
+		Iterator<Object> itr = fullconfig.keySet().iterator();
+		while (itr.hasNext()) {
+			String key = (String) itr.next();
+			if (JsonConf_System.FULL_CONFIG_KEY.contains(key)) {
+				hwconf.put(key, fullconfig.get(key));
+			}
+		}
+		
+		return hwconf;
+	}
+
+	public static class SystemConfigInfo {
+
+		private String device_name;
+		private String sn;
+		private boolean isFollowNetworkTimezone = false;
+		private Integer tzId;
+		private StringBuilder sb = new StringBuilder();
+
+		public String getDevice_name() {
+			return device_name;
+		}
+
+		public void setDevice_name(String device_name) {
+			this.device_name = device_name;
+		}
+
+		public String getSn() {
+			return sn;
+		}
+
+		public void setSn(String sn) {
+			this.sn = sn;
+		}
+
+		public boolean isFollowNetworkTimezone() {
+			return isFollowNetworkTimezone;
+		}
+
+		public void setFollowNetworkTimezone(boolean isFollowNetworkTimezone) {
+			this.isFollowNetworkTimezone = isFollowNetworkTimezone;
+		}
+
+		public Integer getTzId() {
+			return tzId;
+		}
+
+		public void setTzId(Integer tzId) {
+			this.tzId = tzId;
+		}
+		
+		public StringBuilder getSb() {
+			return sb;
+		}
+
+		@Override
+		public String toString() {
+			StringBuilder builder = new StringBuilder();
+			builder.append("SystemConfigInfo [device_name=");
+			builder.append(device_name);
+			builder.append(", sn=");
+			builder.append(sn);
+			builder.append(", isFollowNetworkTimezone=");
+			builder.append(isFollowNetworkTimezone);
+			builder.append(", tzId=");
+			builder.append(tzId);
+			builder.append(", sb=");
+			builder.append(sb);
+			builder.append("]");
+			return builder.toString();
+		}
+
+	}
+
+	public static String formatDeviceName(SystemConfigInfo ctr) throws SystemConfigException
+	{
+		String devNameWithoutHyphen = null;
+		
+		String devName = ctr.getDevice_name();
+		String sn = ctr.getSn();
+		
+		if (sn==null)
+		{
+			throw new SystemConfigException("sn is null for "+ctr);			
+		}
+		
+		if (devName==null)
+		{
+			log.warnf("devName is null for "+ctr);
+			devName = sn;
+		}
+		
+		sn = sn.toUpperCase();
+		
+		if (devName.equalsIgnoreCase(sn))
+			return sn;
+		
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < devName.length(); i++)
+		{
+			if (isValidProfileChar(devName.charAt(i)))
+			{
+				sb.append(devName.charAt(i));
+			}
+			else
+			{
+				if (i > 0 && isValidProfileChar(devName.charAt(i - 1)))
+					sb.append("-");
+			}
+		}
+
+		while (sb.length() > 1 && sb.charAt(0) == '-')
+		{
+			sb.deleteCharAt(0);
+		}
+
+		while (sb.length() > 1 && sb.charAt(sb.length() - 1) == '-')
+		{
+			sb.deleteCharAt(sb.length() - 1);
+		}
+		
+		devNameWithoutHyphen = sb.toString().replace("-", "");
+		if (devNameWithoutHyphen.isEmpty())
+			return sn;
+		else
+		{
+			if (sb.toString().length()>32)
+				sb.setLength(32);
+			
+			return sb.toString();
+		}
+	}
+	
+	private static boolean isValidProfileChar(char ch)
+	{
+		if (Character.UnicodeBlock.of(ch) != Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS && (Character.isLetter(ch) || Character.isDigit(ch) || ch == '-'))
+			return true;
+		else
+			return false;
+	}
+	
+	public static void main(String args[]) throws Exception
+	{
+		DateUtils.loadTimeZones();
+		
+		SystemConfigInfo ctr = new SystemConfigInfo();
+		ctr.setDevice_name("VI MAX.BR1 2830-E24C-0774");		
+		ctr.setSn("2830-E24C-0774");
+		ctr.setTzId(78);
+		ctr.setFollowNetworkTimezone(true);
+		
+		JsonConf_System sysJson = SystemConfigUtils.getDatabaseSystemFullConfig(ctr);
+		System.out.println(sysJson);
+	
+		Properties hwconfig = CommonConfigUtils.parsePropertiesString(sysJson.generateHardwareConfig(JsonConf_System.class, CONFIG_TYPE.AP).get(-1));		
+		hwconfig.put("WLAN_ORDER","blah blah blah");
+		hwconfig.put("WLAN1_XXX","blah blah blah");
+		System.out.println("hwconfig="+hwconfig);
+		System.out.println("syshwconfig="+getHardwareSystemConfig(hwconfig));		
+		System.out.println("syshwconfig(ordered)=\n"+CommonConfigUtils.getOrderedConfig(getHardwareSystemConfig(hwconfig)));
+		System.out.println("syshwconfig="+getHardwareSystemConfigMd5(hwconfig));
+		
+		List<String> nameLst = Arrays.asList(
+				"1234567890123456789012345678901234567890"
+				);
+		
+		int i = 0;
+		for (String name:nameLst)
+		{
+			ctr.setDevice_name(name);
+			System.out.println((i++)+" "+ctr.getDevice_name()+"="+formatDeviceName(ctr));
+		}		
+	}
+}

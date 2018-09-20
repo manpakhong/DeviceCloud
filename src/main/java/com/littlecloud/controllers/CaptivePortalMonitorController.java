@@ -1,0 +1,270 @@
+package com.littlecloud.controllers;
+
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.criteria.CaptivePortalAccessLogCriteria;
+import com.littlecloud.control.dao.criteria.CaptivePortalActivitiesCriteria;
+import com.littlecloud.control.entity.CaptivePortalAccessLog;
+import com.littlecloud.control.entity.CaptivePortalActivity;
+import com.littlecloud.control.entity.branch.HouseKeepLogs;
+import com.littlecloud.services.CaptivePortalAccessLogsMgr;
+import com.littlecloud.services.CaptivePortalActivitiesMgr;
+import com.littlecloud.services.CaptivePortalHealthMgr;
+import com.littlecloud.services.HouseKeepLogsMgr;
+import com.littlecloud.utils.CommonUtils;
+
+public class CaptivePortalMonitorController {
+	private static final Logger log = Logger.getLogger(CaptivePortalMonitorController.class);
+	private static final String CAPTIVE_PORTAL_HEALTH_CHECK_OK = "OK";
+	
+	private String orgId;
+	
+	public CaptivePortalMonitorController(String orgId){
+		this.orgId = orgId;
+	}
+	
+	public String generateCaptivePortalAccessLogsResultHtml(CaptivePortalAccessLogCriteria cpalCriteria){
+		StringBuilder sb = new StringBuilder();
+		try{
+			CaptivePortalAccessLogsMgr captivePortalAccessLogsMgr = new CaptivePortalAccessLogsMgr(orgId);
+			List<CaptivePortalAccessLog> captivePortalAccessLogList = captivePortalAccessLogsMgr.getCaptivePortalAccessLogList(cpalCriteria);
+			sb.append("<h3>Captive Portal Server Access Log</h3>");
+			sb.append("<div class=\"captivePortalAccessLogDiv\">");
+			if (captivePortalAccessLogList != null && captivePortalAccessLogList.size() > 0){
+				sb.append("<table class=\"accessLogTable\">");
+				sb.append("<tr>");
+					sb.append("<th>network_id</th>");
+					sb.append("<th>device_id</th>");
+					sb.append("<th>ssid</th>");
+					sb.append("<th>time</th>");
+					sb.append("<th>report_type</th>");
+					sb.append("<th>access_mode</th>");
+					sb.append("<th>client_mac</th>");					
+				sb.append("</tr>");
+				for (CaptivePortalAccessLog captivePortalAccessLog: captivePortalAccessLogList){
+					if (captivePortalAccessLog != null){
+						sb.append("</tr>");
+						sb.append("<td>");
+						if (captivePortalAccessLog.getNetworkId() != null){
+							sb.append(captivePortalAccessLog.getNetworkId());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (captivePortalAccessLog.getDeviceId() != null){
+							sb.append(captivePortalAccessLog.getDeviceId());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (captivePortalAccessLog.getSsid() != null){
+							sb.append(captivePortalAccessLog.getSsid());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (captivePortalAccessLog.getUnixtime() != null){
+							String dateString = CommonUtils.convertUnixTime2DateString(captivePortalAccessLog.getUnixtime());
+							sb.append(dateString);
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (captivePortalAccessLog.getReportType() != null){
+							sb.append(captivePortalAccessLog.getReportType());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (captivePortalAccessLog.getAccessMode() != null){
+							sb.append(captivePortalAccessLog.getAccessMode());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (captivePortalAccessLog.getClientMac() != null){
+							sb.append(captivePortalAccessLog.getClientMac());
+						}
+						sb.append("</td>");
+						sb.append("<tr>");	
+					}
+				}
+				
+			} else{
+				sb.append("<span class=\"captivePortalAccessLogSpan alertSpan\">No Access log found!!!</span>");
+			}
+			sb.append("</div>");			
+		} catch (Exception e){
+			log.error("CaptivePortalMonitorController.generateCaptivePortalHealthCheckResultHtml() - htmlString: %s",e);
+		}
+		return sb.toString();
+	}
+	public String generateCaptivePortalActivityListHtml(CaptivePortalActivitiesCriteria cpaCriteria){
+		StringBuilder sb = new StringBuilder();
+		CaptivePortalActivitiesMgr captivePortalActivityMgr = new CaptivePortalActivitiesMgr(orgId);
+		sb.append("<h3>Activities Log</h3>");
+		sb.append("<div class=\"captivePortalActivityResultDiv\">");		
+		List<CaptivePortalActivity> captivePortalActivityList = captivePortalActivityMgr.getCaptivePortalActivityList(cpaCriteria);
+		if (captivePortalActivityList != null && captivePortalActivityList.size() > 0){
+			sb.append("<table class=\"activitiesTable\">");
+				sb.append("<tr>");
+					sb.append("<th>sn</th>");
+					sb.append("<th>ssid</th>");
+					sb.append("<th>username</th>");
+					sb.append("<th>client_mac</th>");
+					sb.append("<th>bssid</th>");
+					sb.append("<th>created_at</th>");
+					sb.append("<th>activity_type</th>");
+					sb.append("<th>status</th>");
+					sb.append("<th>status_msg</th>");
+				sb.append("</tr>");
+			for (CaptivePortalActivity captivePortalActivity: captivePortalActivityList){
+				if (captivePortalActivity != null){
+					sb.append("</tr>");
+					sb.append("<td>");
+					if (captivePortalActivity.getSn() != null){
+						sb.append(captivePortalActivity.getSn());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getSsid() != null){
+						sb.append(captivePortalActivity.getSsid());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getUsername() != null){
+						sb.append(captivePortalActivity.getUsername());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getClientMac() != null){
+						sb.append(captivePortalActivity.getClientMac());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getBssid() != null){
+						sb.append(captivePortalActivity.getBssid());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getCreatedAt() != null){
+						sb.append(captivePortalActivity.getCreatedAt().toString());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getActivityType() != null){
+						sb.append(captivePortalActivity.getActivityType());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getStatus() != null){
+						sb.append(captivePortalActivity.getStatus());
+					}
+					sb.append("</td>");
+					
+					sb.append("<td>");
+					if (captivePortalActivity.getStatusMsg() != null){
+						sb.append(captivePortalActivity.getStatusMsg());
+					}
+					sb.append("</td>");
+					sb.append("<tr>");	
+				}
+			}
+
+			sb.append("</table>");
+		} else{
+			sb.append("<span class=\"noActivityListSpan alertSpan\">No activity log found!!!</span>");
+		}
+		sb.append("</div>");
+		
+		if (log.isDebugEnabled()){
+			log.debugf("CaptivePortalMonitorController.generateCaptivePortalActivityListHtml() - htmlString: %s", sb.toString());
+		}
+		return sb.toString();
+	}
+	public String generateCaptivePortalHouseKeepLogHtml(){
+		StringBuilder sb = new StringBuilder();
+		try{
+			HouseKeepLogsMgr houseKeepLogsMgr = new HouseKeepLogsMgr();
+			List<HouseKeepLogs> houseKeepLogList  = houseKeepLogsMgr.getHouseKeepLogs(orgId, HouseKeepLogs.TABLE_NAME_CAPTIVE_PORTAL_SESSIONS);
+			sb.append("<h3>Captive Portal House Keep Log</h3>");
+			sb.append("<div class=\"captivePortalHouseKeepLogDiv\">Captive Portal Last " + HouseKeepLogsMgr.HOUSE_KEEP_LOG_LIMIT +" records:");
+
+			if (houseKeepLogList != null && houseKeepLogList.size() > 0){
+				sb.append("<table class=\"houseKeepLogTable\">");
+					sb.append("<tr>");
+						sb.append("<th>organization_id</th>");
+						sb.append("<th>network_id</th>");
+						sb.append("<th>table_name</th>");
+						sb.append("<th>clear_date</th>");
+						sb.append("<th>affected_row</th>");
+						sb.append("<th>execute_time</th>");
+					sb.append("</tr>");
+				/*
+				for (HouseKeepLogs houseKeepLog: houseKeepLogList){
+					if (houseKeepLog != null){
+						sb.append("</tr>");
+						sb.append("<td>");
+						if (houseKeepLog.getOrganizationId() != null){
+							sb.append(houseKeepLog.getOrganizationId());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (houseKeepLog.getNetwork_id() != null){
+							sb.append(houseKeepLog.getNetwork_id());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (houseKeepLog.getTable_Name() != null){
+							sb.append(houseKeepLog.getTable_Name());
+						}
+						sb.append("</td>");
+						sb.append("<td>");
+						if (houseKeepLog.get() != null){
+							sb.append(houseKeepLog.getTable_Name());
+						}
+						sb.append("</td>");
+						sb.append("<tr>");	
+					}
+				}
+				*/
+				sb.append("</table>");
+			} else{
+				sb.append("<span class=\"noHouseKeepLogSpan alertSpan\">No house keep log found!!!</span>");
+			}
+			
+			
+			sb.append("</div>");			
+		} catch (Exception e){
+			log.error("CaptivePortalMonitorController.generateCaptivePortalHealthCheckResultHtml() - htmlString: %s",e);
+		}
+		return sb.toString();
+	}
+	
+	public String generateCaptivePortalHealthCheckResultHtml(){
+		StringBuilder sb = new StringBuilder();
+		try{
+			CaptivePortalHealthMgr captivePortalHealthMgr = new CaptivePortalHealthMgr();
+			String healthResponse = captivePortalHealthMgr.askCaptivePortalServiceHealthStatus();
+			sb.append("<h3>Captive Portal Health check</h3>");
+			sb.append("<div class=\"captivePortalHealthResultDiv\">Captive Portal Health check result:");
+			if (healthResponse != null && healthResponse.trim().equalsIgnoreCase(CAPTIVE_PORTAL_HEALTH_CHECK_OK)){
+				sb.append("<span>");
+				sb.append(healthResponse);
+				sb.append("<span>");
+			} else {
+				sb.append("<span class=\"alertSpan\">");
+				sb.append("Cannot make connection to Captive Portal!!!");
+				sb.append("<span>");
+			}
+			
+			sb.append("</div>");			
+		} catch (Exception e){
+			log.error("CaptivePortalMonitorController.generateCaptivePortalHealthCheckResultHtml() - htmlString: %s",e);
+		}
+		return sb.toString();
+	}
+}

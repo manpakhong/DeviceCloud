@@ -1,0 +1,467 @@
+package com.littlecloud.services;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+import java.util.TimeZone;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.entity.Devices;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.report.DailyDeviceUsages;
+import com.littlecloud.control.entity.report.DeviceMonthlyUsages;
+import com.littlecloud.control.entity.report.DeviceUsages;
+import com.littlecloud.control.json.JsonResponse;
+import com.littlecloud.control.json.JsonResponse.ResponseCode;
+import com.littlecloud.control.json.model.Json_Device_Timely_Usage;
+import com.littlecloud.control.json.model.Json_Usage_Info;
+import com.littlecloud.control.json.model.Json_Wan_Info;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.helpers.WanBandwidthHelper;
+
+public class WanBandwidthMgr {
+	private static final Logger log = Logger.getLogger(WanBandwidthMgr.class);
+	public static final String BANDWIDTH_TYPE_HOURLY = "hourly";
+	public static final String BANDWIDTH_TYPE_DAILY = "daily";
+	public static final String BANDWIDTH_TYPE_MONTHLY = "monthly";
+	private String orgId;
+	private Devices device;
+	private Networks network;
+	private Integer wanId;
+	
+	private SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
+	public WanBandwidthMgr(String orgId, Integer wanId, Devices device, Networks network){
+		this.orgId = orgId;
+		this.device = device;
+		this.network = network;
+		this.wanId = wanId;
+		init();
+	}
+	
+	private void init(){
+		try{
+			// TODO if has daos, init here
+		} catch (Exception e){
+			log.error("WanBandwidthMgr.init() - ", e);
+		}
+	}
+	
+	public boolean doHourlyJsonDeviceTimelyUsageResponse(Calendar calin, JsonResponse<Json_Device_Timely_Usage> response){
+		Json_Device_Timely_Usage jsonDeviceTimelyUsage = new Json_Device_Timely_Usage();
+		boolean isDone = false;
+		try {
+			Integer devId = device.getId();
+			Integer networkId = network.getId();
+			
+			DeviceUsagesMgr deviceUsagesMgr = new DeviceUsagesMgr(this.orgId);
+			List<Integer> wanList = deviceUsagesMgr.getDistinctWanList(devId, networkId);
+			List<Json_Wan_Info> wans = new ArrayList<Json_Wan_Info>();
+			List<Json_Usage_Info> usageInfos = new ArrayList<Json_Usage_Info>();
+			
+
+			int toUnixTime = WanBandwidthHelper.convert2UnixTime(calin.getTime());
+			int curTimeIntervalBegin = WanBandwidthHelper.trimMinuteSecondAndConvert2UnixTime(calin);
+			int fromUnixTime = WanBandwidthHelper.calculateDateOneDayBeforeAndConvert2UnixTime(calin);			
+
+			
+			if (log.isInfoEnabled()){
+				log.infof("getWanBandwidth hourly: fromUnixTime = %s, curTimeIntervalBegin = %s",fromUnixTime, curTimeIntervalBegin);
+			}
+			
+			if(wanList != null && wanList.size() > 0) {		
+				for(Integer wanID:wanList){
+					List<DeviceUsages> uList= deviceUsagesMgr.getRecordsByDeviceIdAndWanIdAndTimeV2(networkId, devId, wanID, fromUnixTime, toUnixTime);
+					if( uList != null && uList.size() > 0 && uList.get(0).getWan_name() != null && uList.get(0).getWan_name().isEmpty() == false ){
+						Json_Wan_Info wan = new Json_Wan_Info();
+						wan.setId(wanID);
+						wan.setName(uList.get(0).getWan_name());
+						wans.add(wan);
+					}
+					if( uList != null && uList.size() > 0){
+						int cursor = 0;
+						DeviceUsages usage = null;
+						for( int time = curTimeIntervalBegin; time > curTimeIntervalBegin - 86400; time = time - 3600 ){
+							Json_Usage_Info usageInfo = new Json_Usage_Info();
+							if( uList.size() > cursor ){
+								usage = uList.get(cursor);
+							}
+							if(usage==null) {
+								log.errorf("getWanBandwidth hourly: usage hourly is null, sn=%s, size=%d, cursor=%d", device.getSn(), uList.size(), cursor);
+							}
+							
+							if(usage != null && usage.getId().getUnixtime() == time ){
+								if(usage.getRx() != null){
+									usageInfo.setDown(usage.getRx());
+								}
+								if(usage.getTx() != null){
+									usageInfo.setUp(usage.getTx());
+								}
+								if(usage.getDatetime() != null){
+									Date from_date = usage.getDatetime();
+									//set time_zone of the from_date_time
+									format.setTimeZone(TimeZone.getTimeZone(DateUtils.getTimezoneFromId(Integer.parseInt(network.getTimezone()))));
+									String f_date = format.format(from_date);
+									usageInfo.setFrom_date(f_date);
+									Calendar cal = Calendar.getInstance();	
+									cal.setTime(from_date);
+									cal.set(Calendar.MINUTE, 59);
+									cal.set(Calendar.SECOND, 59);
+									String t_date = format.format(cal.getTime());
+									usageInfo.setTo_date(t_date);
+								}
+								cursor++;
+								if(log.isInfoEnabled()){
+									log.info("getWanBandwidth hourly: added usage="+usage);
+								}
+							}
+							else{
+								Date newDate = new Date(Long.parseLong(time+"000"));
+								format.setTimeZone(TimeZone.getTimeZone(DateUtils.getTimezoneFromId(Integer.parseInt(network.getTimezone()))));
+								usageInfo.setFrom_date(format.format(newDate));
+								Calendar cal = Calendar.getInstance();	
+								cal.setTime(newDate);
+								cal.set(Calendar.MINUTE, 59);
+								cal.set(Calendar.SECOND, 59);
+								if(usage.getRx() != null){
+									usageInfo.setDown(usage.getRx());
+								}
+								if(usage.getTx() != null){
+									usageInfo.setUp(usage.getTx());
+								}
+								usageInfo.setTo_date(format.format(cal.getTime()));
+								if(log.isInfoEnabled()){
+									log.info("getWanBandwidth hourly: added empty usage="+usage);
+								}
+							}
+							if (usage.getWan_id() != null){
+								if(this.wanId.intValue() == usage.getWan_id().intValue() ){
+									if(log.isInfoEnabled()){
+										log.info("getWanBandwidth hourly: added usageInfo="+usageInfo);
+									}
+									usageInfos.add(usageInfo);
+								}
+							}
+						}
+						if(usageInfos.size() == 0) {
+							response.setMessage("UNAVAILABLE");
+							if(log.isInfoEnabled()){
+								log.info("getWanBandwidth hourly: size=0, UNAVAILABLE");
+							}
+						} else {
+							jsonDeviceTimelyUsage.setWans(wans);	
+							jsonDeviceTimelyUsage.setUsages(usageInfos);
+							jsonDeviceTimelyUsage.setDevice_id(device.getId());
+							jsonDeviceTimelyUsage.setType(BANDWIDTH_TYPE_HOURLY);
+							jsonDeviceTimelyUsage.setNetwork_id(network.getId());
+							jsonDeviceTimelyUsage.setSn(device.getSn());
+						}
+					} else {
+						response.setMessage("UNAVAILABLE");
+						if(log.isInfoEnabled()){
+							log.info("getWanBandwidth hourly: UNAVAILABLE");
+						}
+					}
+				}
+				response.setData(jsonDeviceTimelyUsage);
+				response.setResp_code(ResponseCode.SUCCESS);
+			}
+			else {
+				response.setMessage("UNAVAILABLE");
+				if(log.isInfoEnabled()){
+					log.info("getWanBandwidth hourly: UNAVAILABLE");
+				}
+				response.setResp_code(ResponseCode.SUCCESS);
+				response.setData(jsonDeviceTimelyUsage);
+//				ACService.fetchCommand(MessageType.PIPE_INFO_TYPE_DEV_USAGE_HIST, request.getCaller_ref() + request.getServer_ref(), dev.getIanaId(), dev.getSn());
+			}
+			isDone = true;
+		} catch( Exception e ){
+			log.error("getWanBandwidth hourly - sn="+device.getSn()+", orgId="+orgId+", devId="+device.getId()+" " + e, e);
+			response.setResp_code(ResponseCode.INTERNAL_ERROR);
+		}
+		return isDone;
+	}
+	public boolean doDailyJsonDeviceTimelyUsageResponse(Date utcDate, JsonResponse<Json_Device_Timely_Usage> response){
+		boolean isDone = false;
+		Json_Device_Timely_Usage devUsaList = new Json_Device_Timely_Usage();
+		Calendar st = Calendar.getInstance();
+		try{
+			DeviceDailyUsagesMgr deviceDailyUsagesMgr = new DeviceDailyUsagesMgr(this.orgId, true); 
+			List<Json_Wan_Info> wans = new ArrayList<Json_Wan_Info>();
+			List<Json_Usage_Info> usageInfos = new ArrayList<Json_Usage_Info>();
+			List<Integer> wanList = deviceDailyUsagesMgr.getDistinctWanIdsWithDeviceId(network.getId(),device.getId());
+			
+			if(wanList!=null && wanList.size()>0){
+				Calendar c = Calendar.getInstance();
+				c.setTime(utcDate);
+				c.set(Calendar.HOUR_OF_DAY, 0);
+				c.set(Calendar.MINUTE, 0);
+				c.set(Calendar.SECOND, 0);
+				Date fDate = c.getTime();
+				
+				int now_unixtime = WanBandwidthHelper.convert2UnixTime(utcDate);
+				
+				c.add(Calendar.MONTH, -1);
+				Date tDate = c.getTime();
+				
+				int fTimeMill = (int)(fDate.getTime()/1000);
+				int tTimeMill = (int)(tDate.getTime()/1000);
+				
+				for(Integer wanID:wanList){
+					List<DailyDeviceUsages> uList= deviceDailyUsagesMgr.getRecordsByDeviceIdAndWanIdV2(network.getId(), device.getId(), wanID, now_unixtime);
+					if( uList.get(0).getWan_name() != null && uList.get(0).getWan_name().isEmpty() == false ){
+						Json_Wan_Info wan = new Json_Wan_Info();
+						wan.setId(wanID);
+						wan.setName(uList.get(0).getWan_name());
+						wans.add(wan);
+					}
+					
+					if( uList != null && uList.size() > 0){
+						int cursor = 0;
+						DailyDeviceUsages usage = null;
+						for( int time = fTimeMill; time > tTimeMill; time = time - 86400 ){
+							if( uList.size() > cursor )
+								usage = uList.get(cursor);
+							Json_Usage_Info usageInfo = new Json_Usage_Info();
+							
+							if(usage==null) {
+								log.errorf("getWanBandwidth daily: usage daily is null, sn=%s, size=%d, cursor=%d", device.getSn(), uList.size(), cursor);
+							}
+							
+							if(usage != null && usage.getId().getUnixtime() == time ){
+								if(usage.getRx() != null){
+									usageInfo.setDown(usage.getRx());
+								}
+								if(usage.getTx() != null){
+									usageInfo.setUp(usage.getTx());
+								}
+								if(usage.getDatetime() != null){
+									st.setTime(usage.getDatetime());
+									String f_date = format.format(st.getTime());
+									usageInfo.setFrom_date(f_date);
+									Calendar cal = Calendar.getInstance();
+									cal.setTime(st.getTime());
+									cal.set(Calendar.HOUR_OF_DAY, 23);
+									cal.set(Calendar.MINUTE, 59);
+									cal.set(Calendar.SECOND, 59);
+									String t_date = format.format(cal.getTime());
+									usageInfo.setTo_date(t_date);
+								}	
+								cursor++;
+							} else{
+								Date newDate = new Date(Long.parseLong(time+"000"));
+								usageInfo.setFrom_date(format.format(newDate));
+								Calendar cal = Calendar.getInstance();
+								cal.setTime(newDate);
+								cal.set(Calendar.HOUR_OF_DAY, 23);
+								cal.set(Calendar.MINUTE, 59);
+								cal.set(Calendar.SECOND, 59);
+								usageInfo.setTo_date(format.format(cal.getTime()));
+							}
+							if (usage.getWan_id() != null){
+								if(wanId.intValue() == usage.getWan_id().intValue()){
+									if(log.isInfoEnabled())
+										log.info("getWanBandwidth daily: added usageInfo="+usageInfo);
+									usageInfos.add(usageInfo);
+								}
+							}
+						}
+						if(usageInfos.size() == 0) {
+//							response.setMessage("UNAVAILABLE");
+							if(log.isInfoEnabled()){
+								log.info("getWanBandwidth daily: size=0, UNAVAILABLE");
+							}
+						} else {
+							devUsaList.setWans(wans);	
+							devUsaList.setUsages(usageInfos);
+							devUsaList.setDevice_id(device.getId());
+							devUsaList.setType(BANDWIDTH_TYPE_DAILY);
+							devUsaList.setNetwork_id(network.getId());
+							devUsaList.setSn(device.getSn());
+						}
+					//devUsaList.add(devDailyUsage);
+					} else {
+//						response.setMessage("UNAVAILABLE");
+						if(log.isInfoEnabled())
+							log.info("getWanBandwidth daily: UNAVAILABLE");
+					}
+				}
+				response.setData(devUsaList);
+				response.setResp_code(ResponseCode.SUCCESS);
+				isDone = true;
+			} else {
+				response.setMessage("UNAVAILABLE");
+				if(log.isInfoEnabled()){
+					log.info("getWanBandwidth daily: UNAVAILABLE");
+				}
+				response.setData(devUsaList);
+				response.setResp_code(ResponseCode.SUCCESS);
+//				ACService.fetchCommand(MessageType.PIPE_INFO_TYPE_DEV_USAGE_HIST, request.getCaller_ref() + request.getServer_ref(), dev.getIanaId(), dev.getSn());
+			}
+		}
+		catch( Exception e ) {
+			log.error("getWanBandwidth daily - sn="+device.getSn()+", orgId="+orgId+", devId="+device.getId()+" " + e, e);
+			response.setResp_code(ResponseCode.INTERNAL_ERROR);
+		}
+		
+
+		return isDone;
+	}
+
+	public boolean doMonthlyJsonDeviceTimelyUsageResponse(Date utcDate, JsonResponse<Json_Device_Timely_Usage> response){
+		Json_Device_Timely_Usage devUsaList = new Json_Device_Timely_Usage();
+		Calendar st = Calendar.getInstance();
+		boolean isDone = false;
+		try{
+			List<Json_Wan_Info> wans_month = new ArrayList<Json_Wan_Info>();
+			List<Json_Usage_Info> usageInfos = new ArrayList<Json_Usage_Info>();
+			DeviceMonthlyUsagesMgr deviceMonthlyUsagesMgr = new DeviceMonthlyUsagesMgr(this.orgId);
+			List<Integer> wanList = deviceMonthlyUsagesMgr.getDistinctWanList(network.getId(),device.getId());
+
+			 
+			if(wanList!=null && wanList.size()>0) {
+				for(Integer wanId:wanList){
+					Calendar c = Calendar.getInstance();
+					c.setTime(utcDate);
+					c.set(Calendar.DAY_OF_MONTH, 1);
+					c.set(Calendar.HOUR, 0);
+					c.set(Calendar.MINUTE, 0);
+					c.set(Calendar.SECOND, 0);
+//					List<DeviceMonthlyUsages> uList= deviceMonthlyUsageDAO.getRecordsWithDeviceIdAndWanId(net.getId(),param_devId, wanId);
+					int now_unixtime = WanBandwidthHelper.convert2UnixTime(utcDate);
+					
+					
+					List<DeviceMonthlyUsages> uList= deviceMonthlyUsagesMgr.getRecordsWithDeviceIdAndWanIdV2(network.getId(), device.getId(), wanId, now_unixtime);
+					if(log.isInfoEnabled()){
+						log.infof("getWanBandwidth monthly: now_unixtime = %s, ulist = %s",now_unixtime, uList);
+					}
+					if( uList.get(0).getWan_name() != null && uList.get(0).getWan_name().isEmpty() == false ){
+						Json_Wan_Info wan = new Json_Wan_Info();
+						wan.setId(wanId);
+						wan.setName(uList.get(0).getWan_name());
+						wans_month.add(wan);
+					}	
+					if( uList != null && uList.size() > 0){		
+						int cursor = 0;
+						DeviceMonthlyUsages usage = null;
+						for( int i = 0; i < 6; i++ ){	
+							if( cursor < uList.size() ){
+								usage = uList.get(cursor);
+							}
+							if(usage==null) {
+								log.errorf("getWanBandwidth monthly: usage monthly is null, sn=%s, size=%d, cursor=%d", device.getSn(), uList.size(), cursor);
+							}
+
+							if(log.isInfoEnabled()){
+								log.info("getWanBandwidth monthly: cursor="+cursor+", usage="+usage+", usage.getDatetime="+usage.getDatetime());	
+							}
+							Json_Usage_Info usageInfo = new Json_Usage_Info();
+							
+							Calendar uCal = Calendar.getInstance();
+							uCal.setTime(usage.getDatetime());
+
+							if( c.get(Calendar.MONTH) == uCal.get(Calendar.MONTH) ){
+								if(log.isInfoEnabled()){
+									log.info("c.month=" + c.get(Calendar.MONTH) + ", u.month="+uCal.get(Calendar.MONTH));
+								}
+								if(usage.getRx() != null){
+									usageInfo.setDown(usage.getRx());
+								}
+								if(usage.getTx() != null){
+									usageInfo.setUp(usage.getTx());
+								}
+								if(usage.getDatetime() != null){
+									st.setTime(usage.getDatetime());
+									String f_date = format.format(st.getTime());
+									usageInfo.setFrom_date(f_date);
+									Calendar cal = Calendar.getInstance();
+									cal.setTime(st.getTime());	
+									cal.set(Calendar.SECOND, 0);
+									cal.set(Calendar.MINUTE, 0);
+									cal.set(Calendar.HOUR_OF_DAY, 0);
+									cal.set(Calendar.DAY_OF_MONTH, 1);
+									cal.add(Calendar.MONTH, 1);
+									cal.add(Calendar.SECOND, -1);										
+									String t_date = format.format(cal.getTime());
+									usageInfo.setTo_date(t_date);
+								}
+								cursor++;
+							}
+							else{
+								usageInfo.setFrom_date(format.format(c.getTime()));
+								Calendar cal = Calendar.getInstance();
+								cal.setTime(c.getTime());	
+								cal.set(Calendar.SECOND, 0);
+								cal.set(Calendar.MINUTE, 0);
+								cal.set(Calendar.HOUR_OF_DAY, 0);
+								cal.set(Calendar.DAY_OF_MONTH, 1);
+								cal.add(Calendar.MONTH, 1);
+								cal.add(Calendar.SECOND, -1);
+								usageInfo.setTo_date(format.format(cal.getTime()));
+							}
+							
+//-------------------the WS shall not return the oldest(more than 18 months) record which has zero download and upload values
+//-------------------18 months convert to unixtime is 50025600						
+							if (usage.getWan_id() != null){
+								if(this.wanId.intValue() == usage.getWan_id().intValue()){
+									if(log.isInfoEnabled()){
+										log.info("getWanBandwidth monthly: added usageInfo from="+usageInfo.getFrom_date()+", to="+usageInfo.getTo_date() +", up="+usageInfo.getUp() + ", down="+usageInfo.getDown());
+									}
+									usageInfos.add(usageInfo);
+								}	
+							}
+							c.add(Calendar.MONTH, -1);
+						}
+						if(usageInfos.size() == 0) {
+							response.setMessage("UNAVAILABLE");
+							if(log.isInfoEnabled()){
+								log.info("getWanBandwidth monthly: size=0, UNAVAILABLE");
+							}
+						} else {
+							devUsaList.setWans(wans_month);	
+							devUsaList.setUsages(usageInfos);
+							devUsaList.setDevice_id(device.getId());
+							devUsaList.setType(BANDWIDTH_TYPE_MONTHLY);
+							devUsaList.setNetwork_id(network.getId());
+							devUsaList.setSn(device.getSn());
+						}
+						//devUsaList.add(devMonthlyUsage);
+					} else {
+						response.setMessage("UNAVAILABLE");
+						if(log.isInfoEnabled()){
+							log.info("getWanBandwidth monthly: UNAVAILABLE");
+						}
+					}
+
+				}
+				if (devUsaList.getUsages() == null || devUsaList.getUsages().size() == 0){
+					response.setMessage("UNAVAILABLE");
+				} else {
+					response.setMessage("");
+				}
+				
+				response.setData(devUsaList);
+				response.setResp_code(ResponseCode.SUCCESS);
+			}
+			else{
+				response.setMessage("UNAVAILABLE");
+				if(log.isInfoEnabled()){
+					log.info("getWanBandwidth monthly: UNAVAILABLE");
+				}
+				response.setData(devUsaList);
+				response.setResp_code(ResponseCode.SUCCESS);
+//				ACService.fetchCommand(MessageType.PIPE_INFO_TYPE_DEV_USAGE_HIST, request.getCaller_ref() + request.getServer_ref(), dev.getIanaId(), dev.getSn());
+			}
+			isDone = true;
+		}
+		catch( Exception e ){
+			log.error("getWanBandwidth monthly - sn="+device.getSn()+", orgId="+orgId+", devId="+device.getId()+" " + e, e);
+			response.setResp_code(ResponseCode.INTERNAL_ERROR);
+		}
+		return isDone;
+	}
+	
+}

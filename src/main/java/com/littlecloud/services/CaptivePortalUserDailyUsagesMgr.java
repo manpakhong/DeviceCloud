@@ -1,0 +1,229 @@
+package com.littlecloud.services;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+import java.util.TimeZone;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.CaptivePortalDailyUserUsagesDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.dao.criteria.CaptivePortalDailyUserUsagesCriteria;
+import com.littlecloud.control.entity.CaptivePortalDailyUserUsage;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.json.util.DateUtils;
+import com.littlecloud.helpers.CaptivePortalDailyUserUsagesHelper;
+import com.littlecloud.utils.CalendarUtils;
+
+public class CaptivePortalUserDailyUsagesMgr {
+	private static final Logger log = Logger.getLogger(CaptivePortalUserDailyUsagesMgr.class);
+	private CaptivePortalDailyUserUsagesDAO cpDailyUserUsagesDao;
+	private String orgId;
+	public CaptivePortalUserDailyUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	public void init(){
+		try{
+			cpDailyUserUsagesDao = new CaptivePortalDailyUserUsagesDAO(orgId);
+		} catch (Exception e){
+			log.error("CAPPORTRPT20141014 - CaptivePortalDailyUserUsagesMgr.init()", e);
+		}
+	}
+	
+	public int doCaptivePortalUserDailyUsagesConsolidation(Calendar calFrom, Calendar calTo){
+		int noOfRecordsDone = 0;
+		try{
+			noOfRecordsDone = doCaptivePortalUserDailyUsagesConsolidation(calFrom, calTo, null);
+		} catch (Exception e){
+			log.error("CaptivePortalDailyUserUsagesMgr.doCaptivePortalDailyUserUsagesConsolidation() - Exception: " + orgId, e);
+		}
+		return noOfRecordsDone;
+	}
+	
+	public int doCaptivePortalUserDailyUsagesConsolidation(Calendar calFrom, Calendar calTo, List<Networks> networkList){
+		int noOfRecordsDone = 0;
+		try{
+			if (networkList == null){
+				NetworksDAO networksDao = new NetworksDAO(orgId);
+				networkList = networksDao.getAllNetworks();
+			}
+			
+			if (networkList != null && networkList.size() > 0){
+				List<CaptivePortalDailyUserUsage> captivePortalDailyUserUsageSavedList = new ArrayList<CaptivePortalDailyUserUsage>();
+				for (Networks network: networkList){
+					String timezone = network.getTimezone();
+					String timezoneId = DateUtils.getTimezoneFromId(Integer.valueOf(timezone));
+					TimeZone tz = TimeZone.getTimeZone(timezoneId);										
+					
+					Calendar calFromLocal = CalendarUtils.convertCalendar2TimeZoneCalendar(calFrom, tz);
+					Calendar calToLocal = CalendarUtils.convertCalendar2TimeZoneCalendar(calTo, tz);
+					
+					List<CaptivePortalDailyUserUsage> newGenCaptivePortalDailyUserUsageList = generateCaptivePortalDailyUserUsageListByCalendar(network.getId(), calFromLocal, calToLocal);
+					CaptivePortalDailyUserUsagesHelper cpDailyUserUsagesHelper = new CaptivePortalDailyUserUsagesHelper();
+		
+					if (newGenCaptivePortalDailyUserUsageList != null && newGenCaptivePortalDailyUserUsageList.size() > 0){
+						for (CaptivePortalDailyUserUsage cpDailyUserUsage: newGenCaptivePortalDailyUserUsageList){
+							cpDailyUserUsagesHelper.addOrUpdateCalculateFields(cpDailyUserUsage);
+						}
+						if (tz != null){
+							List<CaptivePortalDailyUserUsage> sumCpDailyUserUsageList = cpDailyUserUsagesHelper.getElementList();
+							paddingId2CaptivePortalDailyUserUsageListIfRecordExists(sumCpDailyUserUsageList, calFromLocal, tz);
+							if (sumCpDailyUserUsageList != null){
+								captivePortalDailyUserUsageSavedList.addAll(sumCpDailyUserUsageList);
+							}
+						} else {
+							log.warnf("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.doCaptivePortalUserDailyUsagesConsolidation(), timezone is null, orgId: %s, networkId:%s", orgId, network.getId());
+						}
+					} 
+//					else {
+//						CaptivePortalDailyUserUsage captivePortalDailyUserUsage = new CaptivePortalDailyUserUsage();
+//						captivePortalDailyUserUsage.setBandwidthUsed(new BigDecimal(-1));
+//						captivePortalDailyUserUsage.setCpId(-1);
+//						captivePortalDailyUserUsage.setReportDate(calFromLocal.getTime());
+//						captivePortalDailyUserUsage.setSessionCount(-1);
+//						captivePortalDailyUserUsage.setUsername("");
+//						captivePortalDailyUserUsage.setUserGroupId("");
+//						captivePortalDailyUserUsage.setTimeUsed(new BigDecimal(-1));
+//						captivePortalDailyUserUsage.setStatus(false);
+//						Integer unixtime = CalendarUtils.changeDate2Unixtime(calFromLocal.getTime());
+//						captivePortalDailyUserUsage.setUnixtime(unixtime);
+//						newGenCaptivePortalDailyUserUsageList.add(captivePortalDailyUserUsage);
+//						paddingId2CaptivePortalDailyUserUsageListIfRecordExists(newGenCaptivePortalDailyUserUsageList, calFromLocal, tz);
+//						captivePortalDailyUserUsageSavedList.addAll(newGenCaptivePortalDailyUserUsageList);
+//						if (log.isDebugEnabled()){
+//							log.debugf("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.doCaptivePortalUserDailyUsagesConsolidation(), newGenCaptivePortalDailyUserUsageList - no record: %s", newGenCaptivePortalDailyUserUsageList);
+//						}
+//					}
+				} // end for
+				
+				if (captivePortalDailyUserUsageSavedList != null && captivePortalDailyUserUsageSavedList.size() > 0){
+					boolean areSaved = saveCaptivePortalDailyUserUsageList(captivePortalDailyUserUsageSavedList);
+					if (!areSaved){
+						log.warnf("CaptivePortalDailyUsageReportsMgr.doCaptivePortalUserDailyUsagesConsolidation() - areSaved: %s, orgId: %s", areSaved, orgId);
+					} else {
+						noOfRecordsDone = captivePortalDailyUserUsageSavedList.size();
+					}
+				}
+			}
+		} catch (Exception e){
+			log.error("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.doCaptivePortalUserDailyUsagesConsolidation()", e);
+		}
+		return noOfRecordsDone;
+	}
+	private void paddingId2CaptivePortalDailyUserUsageListIfRecordExists(List<CaptivePortalDailyUserUsage> captivePortalDailyUserUsageList, Calendar reportDate, TimeZone tz){
+		try{
+			for (CaptivePortalDailyUserUsage cpDailyUserUsage: captivePortalDailyUserUsageList){
+				if (cpDailyUserUsage.getReportDate() != null && cpDailyUserUsage.getCpId() != null){
+					CaptivePortalDailyUserUsage tmpCpDailyUserUsage = getCaptivePortalDailyUserUsageByDateAndCpIdAndUsernameAndUserGroupId(cpDailyUserUsage.getReportDate(), cpDailyUserUsage.getCpId(), cpDailyUserUsage.getUsername(), cpDailyUserUsage.getUserGroupId());
+					if (tmpCpDailyUserUsage != null && tmpCpDailyUserUsage.getReportDate() != null){
+						Calendar calReportDate = Calendar.getInstance();
+						calReportDate.setTime(tmpCpDailyUserUsage.getReportDate());
+						calReportDate.setTimeZone(tz);
+						CalendarUtils.recomputeCalendar(calReportDate);
+						
+						Calendar calTmpReportDate = Calendar.getInstance();
+						calTmpReportDate.setTimeZone(tz);
+						calTmpReportDate.setTime(tmpCpDailyUserUsage.getReportDate());
+						if (log.isDebugEnabled()){
+							log.debugf("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.paddingId2CaptivePortalDailyUserUsageListIfRecordExists(), before recompute: %s",calTmpReportDate);
+						}
+						CalendarUtils.recomputeCalendar(calTmpReportDate);
+						if (log.isDebugEnabled()){
+							log.debugf("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.paddingId2CaptivePortalDailyUserUsageListIfRecordExists(), after recompute: %s",calTmpReportDate);
+						}
+						
+						
+						boolean isTheSameDate = isReportTheSameDate(calReportDate, calTmpReportDate);
+						if (isTheSameDate){
+							if (cpDailyUserUsage.getCpId().intValue() == cpDailyUserUsage.getCpId().intValue() &&
+									cpDailyUserUsage.getUsername() != null && cpDailyUserUsage.getUsername().equals(tmpCpDailyUserUsage.getUsername()) &&
+									cpDailyUserUsage.getUserGroupId() != null && cpDailyUserUsage.getUserGroupId().equals(tmpCpDailyUserUsage.getUserGroupId())){
+								cpDailyUserUsage.setId(tmpCpDailyUserUsage.getId());
+							}
+						}
+					}
+				}
+			}
+		} catch (Exception e){
+			log.error("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.paddingId2CaptivePortalDailyUsageReportListIfRecordExists()", e);
+		}
+	}
+	
+	private boolean isReportTheSameDate(Calendar calA, Calendar calB){
+		boolean isTheSame = false;
+		if (log.isDebugEnabled()){
+			log.debugf("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.isReportTheSameDate(), calA:%s vs calB: %s",calA ,calB);
+		}
+		
+		if (calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) &&
+			calA.get(Calendar.MONTH) == calB.get(Calendar.MONTH) &&
+			calA.get(Calendar.DATE) == calB.get(Calendar.DATE)){
+			isTheSame = true;
+		}
+		
+		return isTheSame;
+	}
+	
+	private List<CaptivePortalDailyUserUsage> generateCaptivePortalDailyUserUsageListByCalendar(Integer networkId, Calendar calFrom, Calendar calTo){
+		List <CaptivePortalDailyUserUsage> captivePortalDailyUserUsageList = null;
+		try{
+			CaptivePortalActivitiesMgr captivePortalActivitiesMgr = new CaptivePortalActivitiesMgr(orgId);
+			captivePortalDailyUserUsageList = captivePortalActivitiesMgr.generateCaptivePortalDailyUserUsageReportsList(calFrom, calTo, networkId);
+		} catch (Exception e){
+			log.error("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.generateCaptivePortalDailyUsageReportListByDate()", e);
+		}
+		return captivePortalDailyUserUsageList;
+	}
+	
+	public boolean saveCaptivePortalDailyUserUsageList(List<CaptivePortalDailyUserUsage> captivePortalDailyUserUsageList){
+		boolean isSave = false;
+		try{
+			isSave = cpDailyUserUsagesDao.saveCaptivePortalDailyUserUsageList(captivePortalDailyUserUsageList);
+		} catch (Exception e){
+			log.error("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.saveCaptivePortalDailyUsageReportList()", e);
+		}
+		return isSave;
+	}
+	
+	// get exactly the report date
+	public CaptivePortalDailyUserUsage getCaptivePortalDailyUserUsageByDateAndCpIdAndUsernameAndUserGroupId(Date reportDate, Integer cpId, String username, String userGroupId){
+		CaptivePortalDailyUserUsage captivePortalDailyUserUsageReportRtn = null;
+		try{
+			Date from = CalendarUtils.trimDate2Minimum(reportDate);
+			Date to = CalendarUtils.trimDate2Maximum(reportDate);
+			List <CaptivePortalDailyUserUsage> captivePortalDailyUserUsageList = 
+					getCaptivePortalDailyUserUsageListByDateAndCpIdAndUsernameAndUserGroupId(from,to, cpId, username, userGroupId);
+			if (captivePortalDailyUserUsageList != null && captivePortalDailyUserUsageList.size() > 0){
+				if (captivePortalDailyUserUsageList.size() > 1) {
+					log.warnf("CAPPORTRPT20141014 - CaptivePortalDailyUserUsagesMgr.getCaptivePortalDailyUserUsageReportListByDateAndCpIdAndUsernameAndUserGroupId(), captivePortalDailyUsageReportList.size() > 1, %s", captivePortalDailyUserUsageList);
+				}
+				captivePortalDailyUserUsageReportRtn = captivePortalDailyUserUsageList.get(0);
+			}
+		} catch (Exception e){
+			log.error("CAPPORTRPT20141014 - CaptivePortalDailyUserUsagesMgr.getCaptivePortalDailyUserUsageReportListByDateAndCpIdAndUsernameAndUserGroupId()", e);
+		}
+		return captivePortalDailyUserUsageReportRtn;
+	}
+	
+	public List<CaptivePortalDailyUserUsage> getCaptivePortalDailyUserUsageListByDateAndCpIdAndUsernameAndUserGroupId(Date dateFrom, Date dateTo, Integer cpId, String username, String userGroupId){
+		List <CaptivePortalDailyUserUsage> captivePortalDailyUserUsageList = null;
+		try{
+			CaptivePortalDailyUserUsagesCriteria criteria = new CaptivePortalDailyUserUsagesCriteria();
+			criteria.setReportDateFrom(dateFrom);
+			criteria.setReportDateTo(dateTo);
+			criteria.setCpId(cpId);
+			criteria.setUsername(username);
+			criteria.setUserGroupId(userGroupId);
+			captivePortalDailyUserUsageList = cpDailyUserUsagesDao.getCaptivePortalDailyUserUsageList(criteria);
+			
+		} catch (Exception e){
+			log.error("CAPPORTRPT20141014 - CaptivePortalDailyUsageReportsMgr.getCaptivePortalDailyUsageReport()", e);
+		}
+		return captivePortalDailyUserUsageList;
+	}
+	
+	
+}

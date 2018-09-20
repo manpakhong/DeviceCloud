@@ -1,0 +1,118 @@
+package com.littlecloud.services;
+
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+
+import org.jboss.logging.Logger;
+
+import com.littlecloud.control.dao.DeviceMonthlyDpiUsagesDAO;
+import com.littlecloud.control.dao.NetworksDAO;
+import com.littlecloud.control.entity.Networks;
+import com.littlecloud.control.entity.report.DeviceMonthlyDpiUsages;
+import com.littlecloud.utils.CalendarUtils;
+
+public class DeviceDpiMonthlyUsagesMgr {
+	private static final Logger log = Logger.getLogger(DeviceDpiMonthlyUsagesMgr.class);
+	private String orgId;
+	private DeviceMonthlyDpiUsagesDAO deviceMonthlyDpiUsagesDao;
+	public DeviceDpiMonthlyUsagesMgr(String orgId){
+		this.orgId = orgId;
+		init();
+	}
+	private void init(){
+		try{
+			deviceMonthlyDpiUsagesDao = new DeviceMonthlyDpiUsagesDAO(orgId);
+		}catch (Exception e){
+			log.error("DeviceDpiMonthlyUsagesMgr.init() - Exception:", e);
+		}
+	}
+	public boolean doDeviceDpiMonthlyUsagesConsolidation(Calendar calFrom, Calendar calTo){
+		boolean isDone = false;
+		try{
+			isDone = doDeviceDpiMonthlyUsagesConsolidation(calFrom, calTo, null);
+		} catch (Exception e){
+			log.error("DeviceDpiMonthlyUsagesMgr.doDeviceDpiMonthlyUsagesConsolidation() - Exception:", e);
+		}
+		return isDone;
+	}
+	
+	public boolean saveDeviceDpiMonthlyUsagesList(List<DeviceMonthlyDpiUsages> deviceMonthlyDpiUsageList) {
+		boolean areSaved = false;
+		try{
+			areSaved = deviceMonthlyDpiUsagesDao.saveDeviceDpiMonthlyUsagesList(deviceMonthlyDpiUsageList);
+		} catch (Exception e){
+			log.error("DeviceDpiMonthlyUsagesMgr.saveDeviceDpiMonthlyUsagesList() - Exception:", e);
+		}
+		return areSaved;
+	}
+	
+	public boolean doDeviceDpiMonthlyUsagesConsolidation(Calendar calFrom, Calendar calTo, List<Networks> networkList){
+		boolean isDone = false;
+		try{
+			if (networkList == null){
+				NetworksDAO networksDao = new NetworksDAO(orgId);
+				networkList = networksDao.getAllNetworks();
+			}
+			if( networkList != null && networkList.size() > 0){
+				DeviceDpiDailyUsagesMgr deviceDpiDailyUsagesMgr = new DeviceDpiDailyUsagesMgr(orgId);
+				for( Networks network : networkList ){
+					List<DeviceMonthlyDpiUsages> deviceMonthlyDpiUsageList = deviceDpiDailyUsagesMgr.getDeviceDpiMonthlyUsagesRecords(network.getId(), calFrom, calTo);
+					if( deviceMonthlyDpiUsageList != null ){
+						List<DeviceMonthlyDpiUsages> deviceMonthlyDpiUsageSaveList = new ArrayList<DeviceMonthlyDpiUsages>();
+						
+						for( DeviceMonthlyDpiUsages deviceMonthlyDpiUsage : deviceMonthlyDpiUsageList ){
+							List<DeviceMonthlyDpiUsages> monthlyDpiUsageList = findByNetworkIdDeviceIdProtocolCalendarRange(
+									deviceMonthlyDpiUsage.getNetwork_id(), deviceMonthlyDpiUsage.getDevice_id(), deviceMonthlyDpiUsage.getService(), calFrom, calTo);
+							
+							DeviceMonthlyDpiUsages monthlyDpiUsage = null;
+							if (monthlyDpiUsageList != null && monthlyDpiUsageList.size() > 0){
+								monthlyDpiUsage = monthlyDpiUsageList.get(0);
+							}
+							
+							if( monthlyDpiUsage != null ){
+								monthlyDpiUsage.setDevice_id(deviceMonthlyDpiUsage.getDevice_id());
+								monthlyDpiUsage.setNetwork_id(deviceMonthlyDpiUsage.getNetwork_id());
+								monthlyDpiUsage.setService(deviceMonthlyDpiUsage.getService());
+								monthlyDpiUsage.setSize(deviceMonthlyDpiUsage.getSize());
+								monthlyDpiUsage.setUnixtime(CalendarUtils.changeDate2Unixtime(calFrom.getTime()));
+								monthlyDpiUsage.replace();
+								deviceMonthlyDpiUsageSaveList.add(monthlyDpiUsage);
+							}
+							else{
+								monthlyDpiUsage = new DeviceMonthlyDpiUsages();
+								monthlyDpiUsage.setDevice_id(deviceMonthlyDpiUsage.getDevice_id());
+								monthlyDpiUsage.setNetwork_id(deviceMonthlyDpiUsage.getNetwork_id());
+								monthlyDpiUsage.setService(deviceMonthlyDpiUsage.getService());
+								monthlyDpiUsage.setSize(deviceMonthlyDpiUsage.getSize());
+								monthlyDpiUsage.setUnixtime(CalendarUtils.changeDate2Unixtime(calFrom.getTime()));
+								monthlyDpiUsage.create();
+								deviceMonthlyDpiUsageSaveList.add(monthlyDpiUsage);
+							}
+						} // end for
+						if (deviceMonthlyDpiUsageSaveList != null && deviceMonthlyDpiUsageSaveList.size() > 0){
+							boolean areSaved = saveDeviceDpiMonthlyUsagesList(deviceMonthlyDpiUsageSaveList);
+							if (!areSaved){
+								log.warnf("DeviceDpiMonthlyUsagesMgr.doDeviceDpiMonthlyUsagesConsolidation() - areSaved: %s, orgId: %s, networkId: %s",areSaved, orgId, network.getId());
+							}
+						}
+						
+					}
+				}
+			}
+		} catch (Exception e){
+			log.error("DeviceDpiMonthlyUsagesMgr.doDeviceDpiMonthlyUsagesConsolidation() - Exception:", e);
+		}
+		return isDone;
+	}
+	public List<DeviceMonthlyDpiUsages> findByNetworkIdDeviceIdProtocolCalendarRange(
+			Integer networkId, Integer deviceId, String protocol, Calendar calFrom, Calendar calTo) {
+		List<DeviceMonthlyDpiUsages> deviceMonthlyDpiUsageList = null;
+		try{
+			deviceMonthlyDpiUsageList = deviceMonthlyDpiUsagesDao.findByNetworkIdDeviceIdProtocolCalendarRange(networkId, deviceId, protocol, calFrom, calTo);
+		} catch (Exception e){
+			log.error("DeviceMonthlyUsagesMgr.findByNetworkIdDeviceIdProtocolCalendarRange() - ", e);
+		}
+		return deviceMonthlyDpiUsageList;
+	}
+}
